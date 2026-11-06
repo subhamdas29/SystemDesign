@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg-canvas: #0b0b0d;
+  --color-bg-surface: #111113;
+  --color-bg-panel: #131316;
+  --color-bg-subtle: #18181b;
+  --color-bg-active: #222226;
+  --color-bg-hover: #1c1c20;
+  --color-bg-dot: #26262b;
+
+  --color-border-subtle: #27272a;
+  --color-border-default: #3f3f46;
+  --color-border-silver: #8e8e93;
+  --color-border-silver-light: #b8b8b8;
+  --color-border-white: #ffffff;
+  --color-border-dashed: #71717a;
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #d4d4d4;
+  --color-text-muted: #a1a1aa;
+  --color-text-faint: #71717a;
+
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 15px rgba(212, 212, 212, 0.22);
+  --shadow-glow-hover: 0 0 22px rgba(255, 255, 255, 0.35);
+  --shadow-glow-selected: 0 0 25px rgba(255, 255, 255, 0.45);
+  --shadow-glow-target: 0 0 20px rgba(255, 255, 255, 0.5);
+
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, monospace;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle dot grid pattern */
+.bg-dot-grid {
+  background-color: var(--color-bg-canvas);
+  background-image: radial-gradient(var(--color-bg-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Custom scrollbar for dark panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-silver);
+}
