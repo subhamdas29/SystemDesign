@@ -11,6 +11,31 @@ export interface CustomNodeData extends GraphNode {
   isStarter?: boolean;
 }
 
+function getNodeSummaryBadge(type: ComponentType, config: unknown): string {
+  if (!config) return '';
+  const c = config as Record<string, unknown>;
+  switch (type) {
+    case 'client':
+      return `${c.rps ?? 500} rps`;
+    case 'dns':
+      return `${c.cacheHitRatio ?? 90}% hit`;
+    case 'router':
+      return `${c.capacityRps ? Number(c.capacityRps).toLocaleString() : '50k'} rps`;
+    case 'load-balancer':
+      return String(c.algorithm ?? 'round-robin');
+    case 'app-server':
+      return `${c.maxThroughputRps ?? 1000} rps`;
+    case 'cache':
+      return `${c.hitRatio ?? 85}% hit`;
+    case 'database':
+      return `${c.maxQueryThroughputQps ?? 500} qps`;
+    case 'api-gateway':
+      return `${c.capacityRps ? Number(c.capacityRps).toLocaleString() : '30k'} rps`;
+    default:
+      return '';
+  }
+}
+
 export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => {
   const nodeData = data as unknown as CustomNodeData;
   const selectNode = useUiStore((s) => s.selectNode);
@@ -98,7 +123,7 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         <ComponentIcon type={nodeData.type} size={36} />
       </div>
 
-      {/* Label and ID */}
+      {/* Label, ID, and Summary Badge */}
       <div className="text-center w-full">
         <div className="text-xs font-semibold text-[var(--color-text-primary)] truncate">
           {nodeData.label || nodeData.type}
@@ -106,6 +131,13 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         <div className="text-[10px] font-mono text-[var(--color-text-muted)] truncate">
           {nodeData.id}
         </div>
+        {getNodeSummaryBadge(nodeData.type, nodeData.config) && (
+          <div className="mt-1">
+            <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 border border-white/15 text-[var(--color-text-secondary)] shadow-sm truncate max-w-[130px]">
+              {getNodeSummaryBadge(nodeData.type, nodeData.config)}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Output Handle (Right) */}

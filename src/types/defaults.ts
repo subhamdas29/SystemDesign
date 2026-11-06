@@ -1,6 +1,6 @@
 /**
  * Default configurations for each component type.
- * Used during node insertion or when swapping components.
+ * Used during node insertion, reset, or when swapping components.
  */
 
 import type {
@@ -37,84 +37,89 @@ export const DEFAULT_CONFIGS: {
   'message-queue': MessageQueueConfig;
 } = {
   client: {
-    capacity: 10000,
-    latencyMs: 1,
+    readRatio: 80,
+    requestTimeoutMs: 5000,
     rps: 500,
-    trafficPattern: 'constant',
   },
   dns: {
-    capacity: 50000,
-    latencyMs: 15,
+    lookupLatencyMs: 15,
     ttlSeconds: 300,
-  },
-  cdn: {
-    capacity: 100000,
-    latencyMs: 10,
-    hitRatio: 0.8,
-    cacheTtlSeconds: 3600,
+    cacheHitRatio: 90,
   },
   router: {
-    capacity: 50000,
-    latencyMs: 2,
-    algorithm: 'dynamic',
+    capacityRps: 50000,
+    processingLatencyMs: 2,
+    queueLimit: 1000,
+  },
+  'load-balancer': {
+    algorithm: 'round-robin',
+    capacityRps: 50000,
+    processingLatencyMs: 3,
+    queueLimit: 2000,
+    healthCheckIntervalMs: 5000,
+  },
+  'app-server': {
+    maxThroughputRps: 1000,
+    maxConcurrentRequests: 150,
+    avgProcessingTimeMs: 35,
+    cpuCores: 4,
+    memoryMb: 4096,
+    queueSize: 500,
+    overloadBehavior: 'reject',
+    health: 'healthy',
+  },
+  cache: {
+    capacityMb: 1024,
+    lookupLatencyMs: 3,
+    hitRatio: 85,
+    ttlSeconds: 3600,
+    populateOnMiss: true,
+  },
+  database: {
+    maxQueryThroughputQps: 500,
+    queryLatencyMs: 45,
+    connectionPoolSize: 100,
+    queueCapacity: 200,
+    readQueryLatencyMs: 30,
+    writeQueryLatencyMs: 60,
+  },
+  cdn: {
+    capacityRps: 100000,
+    processingLatencyMs: 10,
+    hitRatio: 80,
+    cacheTtlSeconds: 3600,
   },
   firewall: {
-    capacity: 50000,
-    latencyMs: 2,
+    capacityRps: 50000,
+    processingLatencyMs: 2,
     dropRate: 0,
   },
   waf: {
-    capacity: 25000,
-    latencyMs: 8,
+    capacityRps: 25000,
+    processingLatencyMs: 8,
     inspectionDepthMs: 5,
     blockMaliciousOnly: true,
   },
   'rate-limiter': {
-    capacity: 50000,
-    latencyMs: 2,
+    capacityRps: 50000,
+    processingLatencyMs: 2,
     maxTokens: 5000,
     refillRatePerSec: 2000,
   },
-  'load-balancer': {
-    capacity: 50000,
-    latencyMs: 3,
-    algorithm: 'round-robin',
-  },
   'api-gateway': {
-    capacity: 30000,
-    latencyMs: 5,
+    capacityRps: 30000,
+    processingLatencyMs: 5,
     rateLimitEnabled: true,
     authValidationMs: 4,
   },
-  'app-server': {
-    capacity: 1000,
-    latencyMs: 35,
-    maxConcurrency: 150,
-    queueSize: 500,
-    errorRate: 0.001,
-  },
-  cache: {
-    capacity: 20000,
-    latencyMs: 3,
-    hitRatio: 0.85,
-    maxEntries: 100000,
-    evictionPolicy: 'lru',
-  },
-  database: {
-    capacity: 500,
-    latencyMs: 45,
-    maxConnections: 100,
-    readCapacity: 400,
-    writeCapacity: 100,
-  },
   'message-queue': {
-    capacity: 50000,
-    latencyMs: 5,
+    capacityRps: 50000,
+    processingLatencyMs: 5,
     maxQueueDepth: 100000,
     retentionHours: 24,
   },
 };
 
 export function getDefaultConfig(type: ComponentType): AnyComponentConfig {
-  return { ...DEFAULT_CONFIGS[type] };
+  return JSON.parse(JSON.stringify(DEFAULT_CONFIGS[type])) as AnyComponentConfig;
 }

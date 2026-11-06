@@ -1,6 +1,7 @@
 export * from './components/Header';
 export * from './components/InventoryPanel';
 export * from './components/InspectorPanel';
+export * from './components/ConfigForm';
 export * from './components/ControlBar';
 export * from './components/Dashboard';
 export * from './components/ComponentIcon';

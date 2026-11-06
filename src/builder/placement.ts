@@ -13,6 +13,7 @@ import {
   GraphConfigSchema,
   getDefaultConfig,
   AnyComponentConfig,
+  validateNodeConfig,
 } from '../types';
 import { COMPONENT_RULES } from './rules/slotRules';
 
@@ -323,11 +324,11 @@ export function swapComponent(graph: GraphConfig, nodeId: string, targetType: Co
   const targetDefaults = getDefaultConfig(targetType) as unknown as Record<string, unknown>;
 
   // Retain shared config values (capacity, latencyMs)
-  const mergedConfig: AnyComponentConfig = {
+  const mergedConfig = {
     ...targetDefaults,
     capacity: (oldNode.config as { capacity?: number }).capacity ?? (targetDefaults.capacity as number),
     latencyMs: (oldNode.config as { latencyMs?: number }).latencyMs ?? (targetDefaults.latencyMs as number),
-  } as AnyComponentConfig;
+  } as unknown as AnyComponentConfig;
 
   const swappedNode: GraphNode = {
     ...oldNode,
@@ -368,6 +369,16 @@ export function validateGraph(graph: GraphConfig): ValidationResult {
 
   const hasDatabase = graph.nodes.some((n) => n.type === 'database');
   if (!hasDatabase) errors.push('Architecture must include at least one Primary Database.');
+
+  // Validate individual node configurations
+  for (const node of graph.nodes) {
+    const configResult = validateNodeConfig(node.type, node.config);
+    if (!configResult.valid) {
+      for (const err of configResult.errors) {
+        errors.push(`${node.label || node.id}: ${err}`);
+      }
+    }
+  }
 
   // Check multi-server entry-point requirement
   if (appServerCount > 1) {

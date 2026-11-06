@@ -3,6 +3,7 @@ import { useGraphStore, selectGraph, selectNodes } from '@store';
 import { useUiStore, selectSelectedNodeId } from '@store';
 import { COMPONENT_RULES, canRemove, canSwap, ComponentSlotRule } from '@builder';
 import { ComponentIcon } from './ComponentIcon';
+import { ConfigForm } from './ConfigForm';
 import { ComponentType } from '@types';
 
 export const InspectorPanel: React.FC = () => {
@@ -134,32 +135,8 @@ export const InspectorPanel: React.FC = () => {
               </div>
             )}
 
-            {/* Configuration Parameters (Read-only skeleton for Phase 1) */}
-            <div className="p-3 rounded-lg border border-[#27272a] bg-[#111113] space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Parameters
-                </span>
-                <span className="text-[10px] font-mono text-[var(--color-text-faint)]">
-                  Phase 2 interactive
-                </span>
-              </div>
-
-              <div className="space-y-2 font-mono text-xs">
-                <div className="flex items-center justify-between py-1 border-b border-[#222226]">
-                  <span className="text-[var(--color-text-muted)]">Capacity</span>
-                  <span className="text-white">
-                    {(selectedNode.config as { capacity?: number }).capacity?.toLocaleString() ?? '-'} req/s
-                  </span>
-                </div>
-                <div className="flex items-center justify-between py-1 border-b border-[#222226]">
-                  <span className="text-[var(--color-text-muted)]">Base Latency</span>
-                  <span className="text-white">
-                    {(selectedNode.config as { latencyMs?: number }).latencyMs ?? '-'} ms
-                  </span>
-                </div>
-              </div>
-            </div>
+            {/* Real Interactive Configuration Form */}
+            <ConfigForm node={selectedNode} />
 
             {/* Remove Action */}
             <div className="pt-2 border-t border-[#27272a]">
