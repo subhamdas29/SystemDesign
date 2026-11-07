@@ -12,3 +12,7 @@ export * from './canvas/CustomEdge';
 export * from './animation/AnimationCanvas';
 export * from './components/RequestTraceDrawer';
 export * from './components/LiveInspectorTab';
+export * from './dashboard/OverviewTab';
+export * from './dashboard/InfrastructureHealthTab';
+export * from './dashboard/ChartsTab';
+export * from './dashboard/RunSummaryModal';

@@ -7,6 +7,7 @@ import { ControlBar } from './ui/components/ControlBar';
 import { Dashboard } from './ui/components/Dashboard';
 import { EventLogPanel } from './ui/components/EventLogPanel';
 import { RequestTraceDrawer } from './ui/components/RequestTraceDrawer';
+import { RunSummaryModal } from './ui/dashboard/RunSummaryModal';
 import { useUiStore, selectHint } from '@store';
 
 export const App: React.FC = () => {
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
           <Dashboard />
           <EventLogPanel />
           <RequestTraceDrawer />
+          <RunSummaryModal />
 
           {/* Gentle Educational Hint Toast */}
           {hint && (

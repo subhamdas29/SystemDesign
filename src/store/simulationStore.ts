@@ -23,6 +23,10 @@ import { BoundedRingBuffer } from './ringBuffer';
 import { MetricSparklinePoint } from '../ui/inspector/types';
 import { RequestTrace } from '../engine/trace/types';
 import { buildRequestTrace } from '../engine/trace/traceBuilder';
+import { emitMetricsSample } from '../engine/metrics/sampleEmitter';
+import { buildRunSummary } from '../engine/analysis/runSummary';
+import { useMetricsStore } from './metricsStore';
+import { SimulationSnapshot } from '../engine/protocol';
 
 export type SimulationPlayStatus = 'idle' | 'running' | 'paused' | 'completed';
 export type SimulationSpeed = 1 | 2 | 4 | 8;
@@ -137,6 +141,7 @@ let activeSim: Simulation | null = null;
 let lastGraphVersion = -1;
 let lastUiUpdateTime = 0;
 let lastSampledSimSec = -1;
+let lastSnapshot: SimulationSnapshot | null = null;
 
 const nodeHistories = new Map<string, NodeHistoryBuffers>();
 
@@ -305,6 +310,12 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     const activeMode = snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete');
     const displayMode = activeMode === 'aggregate' ? 'aggregate' : 'individual';
 
+    // Initialize metrics store for fresh run
+    useMetricsStore.getState().clearMetrics();
+    const initialSample = emitMetricsSample(snap, graph, null);
+    useMetricsStore.getState().ingestSample(initialSample);
+    lastSnapshot = snap;
+
     set({
       status: 'running',
       simTimeMs: snap.timeMs,
@@ -356,12 +367,14 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       });
     }
 
-    // Reset ring buffers
+    // Reset ring buffers and metrics store
     for (const buf of nodeHistories.values()) {
       buf.metric1.clear();
       buf.metric2.clear();
     }
     lastSampledSimSec = -1;
+    lastSnapshot = null;
+    useMetricsStore.getState().clearMetrics();
 
     set({
       status: 'idle',
@@ -388,6 +401,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     // Rebuild trace if request was tracked
     const { trackedRequestId } = get();
     const trace = trackedRequestId ? buildRequestTrace(trackedRequestId, snap.recentEvents, graph) : null;
+    useMetricsStore.getState().setTimeTravelTime(timeMs);
 
     set({
       simTimeMs: snap.timeMs,
@@ -461,7 +475,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       }
     }
 
-    // Sample ring buffer metrics at ~1s intervals of simulated time
+    // Sample ring buffer and time-series metrics at ~1s intervals of simulated time
     const currentSimSec = Math.floor(snap.timeMs / 1000);
     if (currentSimSec > lastSampledSimSec) {
       lastSampledSimSec = currentSimSec;
@@ -470,6 +484,25 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
         buf.metric1.push({ timeMs: snap.timeMs, value: nState.currentRps });
         buf.metric2.push({ timeMs: snap.timeMs, value: nState.queueDepth });
       }
+
+      const sample = emitMetricsSample(snap, graph, lastSnapshot);
+      useMetricsStore.getState().ingestSample(sample);
+      lastSnapshot = snap;
+    }
+
+    // Check if simulation just finished -> build and present RunResult summary
+    const isJustDone = (snap.isDone || targetSimTime >= trafficConfig.durationMs) && get().status === 'running';
+    if (isJustDone) {
+      const allSamples = useMetricsStore.getState().samples;
+      const runResult = buildRunSummary({
+        graph,
+        traffic: trafficConfig,
+        seed,
+        samples: allSamples,
+        finalSnapshot: snap,
+      });
+      useMetricsStore.getState().setRunResult(runResult);
+      useMetricsStore.getState().openRunSummary();
     }
 
     // Compute basic visual packet sample from in-flight events (capped at 100)
