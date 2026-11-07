@@ -4,11 +4,14 @@
  * These interfaces are purely serializable and ready for a Web Worker boundary.
  */
 
+import { ComponentHealth } from './components';
+
 export type NodeHealthStatus = 'healthy' | 'warning' | 'overloaded' | 'failed';
 
 export interface NodeRuntimeState {
   nodeId: string;
   status: NodeHealthStatus;
+  health?: ComponentHealth;
   currentRps: number;
   utilization: number; // 0.0 to 1.0 (or > 1.0 if overloaded)
   queueDepth: number;
@@ -19,12 +22,15 @@ export interface NodeRuntimeState {
 
 export type SimulationEventType =
   | 'REQUEST_CREATED'
+  | 'DNS_LOOKUP'
   | 'REQUEST_RECEIVED'
+  | 'REQUEST_QUEUED'
+  | 'REQUEST_PROCESSING_STARTED'
   | 'LOAD_BALANCED'
   | 'CACHE_HIT'
   | 'CACHE_MISS'
   | 'DATABASE_QUERY'
-  | 'REQUEST_QUEUED'
+  | 'RESPONSE_FORWARDED'
   | 'REQUEST_REJECTED'
   | 'REQUEST_FAILED'
   | 'REQUEST_TIMED_OUT'

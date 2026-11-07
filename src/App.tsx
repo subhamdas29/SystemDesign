@@ -5,6 +5,8 @@ import { InspectorPanel } from './ui/components/InspectorPanel';
 import { Canvas } from './ui/canvas/Canvas';
 import { ControlBar } from './ui/components/ControlBar';
 import { Dashboard } from './ui/components/Dashboard';
+import { EventLogPanel } from './ui/components/EventLogPanel';
+import { RequestTraceDrawer } from './ui/components/RequestTraceDrawer';
 import { useUiStore, selectHint } from '@store';
 
 export const App: React.FC = () => {
@@ -23,6 +25,8 @@ export const App: React.FC = () => {
         <main className="flex-1 h-full relative overflow-hidden" aria-label="Architecture Canvas">
           <Canvas />
           <Dashboard />
+          <EventLogPanel />
+          <RequestTraceDrawer />
 
           {/* Gentle Educational Hint Toast */}
           {hint && (

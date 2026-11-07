@@ -1,8 +1,17 @@
 /**
  * Simulation engine exports (pure TypeScript).
+ * ZERO React or DOM imports.
  */
 
 export * from './rng';
+export * from './protocol';
+export * from './traffic';
+export * from './hashing';
+export * from './topology';
+export * from './simulation';
+export * from './aggregateSimulation';
+export * from './analysis';
+export * from './scheduler/priorityQueue';
 export * from './components/types';
 export * from './components/metadata';
 export * from './components/presets';

@@ -1,6 +1,6 @@
 /**
  * Deterministic seeded pseudo-random number generator (Mulberry32).
- * Pure TypeScript with ZERO Math.random() or Date.now() dependencies.
+ * Pure TypeScript with zero nondeterministic dependencies.
  */
 
 export interface PRNG {

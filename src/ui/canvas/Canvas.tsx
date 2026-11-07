@@ -12,6 +12,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
+import { AnimationCanvas } from '../animation/AnimationCanvas';
 import { useGraphStore, selectGraph, selectNodes, selectEdges } from '@store';
 import { useUiStore, selectDraggingSwapNodeId } from '@store';
 import { computeLayout, COMPONENT_RULES, canSwap } from '@builder';
@@ -146,6 +147,7 @@ const CanvasInner: React.FC = () => {
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#26262b" gap={24} size={1.5} />
+        <AnimationCanvas />
         <Controls
           showInteractive={false}
           className="!bg-[#111113] !border !border-[#3f3f46] !rounded-lg overflow-hidden !shadow-lg [&>button]:!bg-[#111113] [&>button]:!border-b [&>button]:!border-[#27272a] [&>button]:!fill-[#d4d4d4] hover:[&>button]:!bg-[#18181b]"

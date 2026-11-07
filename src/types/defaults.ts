@@ -60,9 +60,9 @@ export const DEFAULT_CONFIGS: {
   },
   'app-server': {
     maxThroughputRps: 1000,
-    maxConcurrentRequests: 150,
-    avgProcessingTimeMs: 35,
-    cpuCores: 4,
+    maxConcurrentRequests: 200,
+    avgProcessingTimeMs: 10,
+    cpuCores: 16,
     memoryMb: 4096,
     queueSize: 500,
     overloadBehavior: 'reject',
