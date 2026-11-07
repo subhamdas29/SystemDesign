@@ -24,6 +24,11 @@ export interface SystemMetricSample {
   totalServerInstances: number;
   healthyServerCount: number;
   latencyHistogram?: number[];
+  retryRps?: number;
+  amplificationFactor?: number;
+  orphanedWorkCount?: number;
+  packetLossCount?: number;
+  activeFailureCount?: number;
 }
 
 export interface NodeMetricSample {
@@ -74,6 +79,14 @@ export interface FirstSaturatedComponent {
   reason: string;
 }
 
+export interface CascadeTimelineEvent {
+  timeMs: number;
+  type: 'failure_injected' | 'saturation' | 'timeout_spike' | 'retry_storm' | 'recovery';
+  label: string;
+  description: string;
+  severity: 'info' | 'warning' | 'critical';
+}
+
 export interface RunSummaryData {
   totalRequests: number;
   successRatePercent: number;
@@ -85,6 +98,9 @@ export interface RunSummaryData {
   totalFailed: number;
   totalRejected: number;
   totalTimedOut: number;
+  totalRetries?: number;
+  peakAmplificationFactor?: number;
+  cascadeTimeline?: CascadeTimelineEvent[];
   firstSaturatedComponent: FirstSaturatedComponent | null;
   identifiedBottleneck: string | null;
   timeSpentDegradedMs: number;
@@ -105,7 +121,7 @@ export interface RunResult {
 
 export interface ChartNotableEvent {
   timeMs: number;
-  type: 'traffic_change' | 'first_rejection' | 'first_timeout' | 'bottleneck';
+  type: 'traffic_change' | 'first_rejection' | 'first_timeout' | 'bottleneck' | 'failure_injected' | 'failure_removed' | 'cascade_triggered';
   label: string;
   description: string;
 }

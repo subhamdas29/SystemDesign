@@ -27,6 +27,9 @@ import { emitMetricsSample } from '../engine/metrics/sampleEmitter';
 import { buildRunSummary } from '../engine/analysis/runSummary';
 import { useMetricsStore } from './metricsStore';
 import { SimulationSnapshot } from '../engine/protocol';
+import { ActiveFailure, ScenarioCommand, FailureType } from '../scenarios/failures/types';
+import { SCENARIO_PRESETS } from '../scenarios/examples/presets';
+import { useGraphStore } from './graphStore';
 
 export type SimulationPlayStatus = 'idle' | 'running' | 'paused' | 'completed';
 export type SimulationSpeed = 1 | 2 | 4 | 8;
@@ -68,6 +71,12 @@ export interface SimulationStoreState {
   isTracingNextRequest: boolean;
   followTrackedPacket: boolean;
 
+  // Phase 7 Chaos & Failure Injections
+  scenarioScript: ScenarioCommand[];
+  activeFailures: ActiveFailure[];
+  amplificationFactor: number;
+  narrativeEvents: { id: string; timeMs: number; text: string; type: 'info' | 'warning' | 'critical' }[];
+
   runtimeNodes: Record<string, NodeRuntimeState>;
   counters: SimulationCounters;
   latencySummary: LatencySummary;
@@ -107,6 +116,18 @@ export interface SimulationStoreState {
   closeTraceDrawer: () => void;
   clearTrace: () => void;
   getNodeHistory: (nodeId: string) => { points1: MetricSparklinePoint[]; points2: MetricSparklinePoint[] };
+
+  // Phase 7 Actions
+  injectFailureNow: (
+    failureType: FailureType,
+    targetId: string,
+    params?: Record<string, number>,
+    durationMs?: number
+  ) => void;
+  scheduleFailure: (cmd: ScenarioCommand) => void;
+  removeFailure: (failureId: string) => void;
+  clearScenarioScript: () => void;
+  loadScenarioPreset: (presetId: string, baseGraph: GraphConfig) => void;
 }
 
 const initialCounters: SimulationCounters = {
@@ -160,13 +181,15 @@ function getNodeBuffers(nodeId: string): NodeHistoryBuffers {
 function getOrInitSimulation(
   graph: GraphConfig,
   trafficConfig: TrafficConfig,
-  seed: number
+  seed: number,
+  scenarioScript?: ScenarioCommand[]
 ): Simulation {
   if (!activeSim || lastGraphVersion !== graph.version) {
     activeSim = createSimulation({
       graph,
       traffic: trafficConfig,
       seed,
+      scenarioScript,
     });
     lastGraphVersion = graph.version;
   }
@@ -193,6 +216,12 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   isTraceDrawerOpen: false,
   isTracingNextRequest: false,
   followTrackedPacket: false,
+
+  // Phase 7 Chaos & Failure Injections
+  scenarioScript: [],
+  activeFailures: [],
+  amplificationFactor: 1.0,
+  narrativeEvents: [],
 
   runtimeNodes: {},
   counters: initialCounters,
@@ -293,7 +322,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   play: (graph: GraphConfig) => {
-    const { trafficConfig, seed, status } = get();
+    const { trafficConfig, seed, status, scenarioScript } = get();
     if (status === 'paused') {
       set({ status: 'running' });
       return;
@@ -303,6 +332,7 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       graph,
       traffic: trafficConfig,
       seed,
+      scenarioScript,
     });
     lastGraphVersion = graph.version;
 
@@ -324,6 +354,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       latencySummary: snap.latencySummary,
       recentEvents: snap.recentEvents,
       activeSamplePackets: [],
+      activeFailures: snap.activeFailures ?? [],
+      amplificationFactor: snap.amplificationFactor ?? 1.0,
       runtimeBottleneck: snap.bottleneck ?? null,
       activeMode,
       displayMode,
@@ -339,8 +371,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   step: (graph: GraphConfig) => {
-    const { trafficConfig, seed } = get();
-    const sim = getOrInitSimulation(graph, trafficConfig, seed);
+    const { trafficConfig, seed, scenarioScript } = get();
+    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
     const snap = sim.stepNextEvent();
 
     set({
@@ -350,6 +382,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       counters: snap.counters,
       latencySummary: snap.latencySummary,
       recentEvents: snap.recentEvents,
+      activeFailures: snap.activeFailures ?? [],
+      amplificationFactor: snap.amplificationFactor ?? 1.0,
       runtimeBottleneck: snap.bottleneck ?? null,
       activeMode: snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete'),
     });
@@ -359,11 +393,12 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     if (activeSim) {
       activeSim.reset();
     } else if (graph) {
-      const { trafficConfig, seed } = get();
+      const { trafficConfig, seed, scenarioScript } = get();
       activeSim = createSimulation({
         graph,
         traffic: trafficConfig,
         seed,
+        scenarioScript,
       });
     }
 
@@ -390,12 +425,15 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       trackedRequestId: null,
       requestTrace: null,
       isTraceDrawerOpen: false,
+      activeFailures: [],
+      amplificationFactor: 1.0,
+      narrativeEvents: [],
     });
   },
 
   seek: (timeMs: number, graph: GraphConfig) => {
-    const { trafficConfig, seed } = get();
-    const sim = getOrInitSimulation(graph, trafficConfig, seed);
+    const { trafficConfig, seed, scenarioScript } = get();
+    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
     const snap = sim.seek(Math.min(trafficConfig.durationMs, Math.max(0, timeMs)));
 
     // Rebuild trace if request was tracked
@@ -409,6 +447,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       counters: snap.counters,
       latencySummary: snap.latencySummary,
       recentEvents: snap.recentEvents,
+      activeFailures: snap.activeFailures ?? [],
+      amplificationFactor: snap.amplificationFactor ?? 1.0,
       runtimeBottleneck: snap.bottleneck ?? null,
       activeMode: snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete'),
       status: snap.isDone ? 'completed' : get().status === 'running' ? 'running' : 'paused',
@@ -454,10 +494,12 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       seed,
       trackedRequestId,
       isTracingNextRequest,
+      scenarioScript,
+      narrativeEvents,
     } = get();
     if (status !== 'running') return;
 
-    const sim = getOrInitSimulation(graph, trafficConfig, seed);
+    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
     const advanceAmount = deltaRealMs * speed;
     const targetSimTime = Math.min(trafficConfig.durationMs, simTimeMs + advanceAmount);
 
@@ -533,6 +575,53 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     const trace = newlyTrackedId ? buildRequestTrace(newlyTrackedId, snap.recentEvents, graph) : null;
     const highlightedPath = trace ? trace.path : [];
 
+    // Collect narrative events from simulation events
+    const newNarrative = [...narrativeEvents];
+    for (const ev of snap.recentEvents.slice(-25)) {
+      if (ev.type === 'FAILURE_INJECTED' && !newNarrative.some((n) => n.id === `f-${ev.id}`)) {
+        newNarrative.push({
+          id: `f-${ev.id}`,
+          timeMs: ev.timestamp,
+          text: `Injected ${ev.failureType} on ${ev.nodeId}`,
+          type: 'warning',
+        });
+      } else if (ev.type === 'FAILURE_REMOVED' && !newNarrative.some((n) => n.id === `fr-${ev.id}`)) {
+        newNarrative.push({
+          id: `fr-${ev.id}`,
+          timeMs: ev.timestamp,
+          text: `Failure on ${ev.nodeId} resolved`,
+          type: 'info',
+        });
+      } else if (ev.type === 'HEALTH_CHECK_FAILED' && !newNarrative.some((n) => n.id === `hc-${ev.id}`)) {
+        newNarrative.push({
+          id: `hc-${ev.id}`,
+          timeMs: ev.timestamp,
+          text: `Node ${ev.nodeId} failed health checks; removed from pool`,
+          type: 'critical',
+        });
+      } else if (ev.type === 'HEALTH_CHECK_RECOVERED' && !newNarrative.some((n) => n.id === `hcr-${ev.id}`)) {
+        newNarrative.push({
+          id: `hcr-${ev.id}`,
+          timeMs: ev.timestamp,
+          text: `Node ${ev.nodeId} passed health checks; returned to pool`,
+          type: 'info',
+        });
+      }
+    }
+
+    if (
+      snap.amplificationFactor &&
+      snap.amplificationFactor >= 1.5 &&
+      !newNarrative.some((n) => n.id.startsWith('amp-'))
+    ) {
+      newNarrative.push({
+        id: `amp-${Math.floor(snap.timeMs / 5000)}`,
+        timeMs: snap.timeMs,
+        text: `Retry storm detected: load amplified ${snap.amplificationFactor.toFixed(1)}x`,
+        type: 'critical',
+      });
+    }
+
     // Batch React state updates to ~10 Hz (every 100ms real time)
     const nowReal = performance.now();
     const shouldUpdateReact =
@@ -549,6 +638,9 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
         latencySummary: snap.latencySummary,
         recentEvents: snap.recentEvents,
         activeSamplePackets: packets,
+        activeFailures: snap.activeFailures ?? [],
+        amplificationFactor: snap.amplificationFactor ?? 1.0,
+        narrativeEvents: newNarrative.slice(-50),
         runtimeBottleneck: snap.bottleneck ?? null,
         activeMode: snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete'),
         status: snap.isDone || targetSimTime >= trafficConfig.durationMs ? 'completed' : 'running',
@@ -558,6 +650,89 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
         isTracingNextRequest: newlyTrackedId ? false : isTracingNextRequest,
       });
     }
+  },
+
+  injectFailureNow: (
+    failureType: FailureType,
+    targetId: string,
+    params?: Record<string, number>,
+    durationMs?: number
+  ) => {
+    const curTime = get().simTimeMs;
+    const cmd: ScenarioCommand = {
+      t: curTime,
+      action: 'inject',
+      failureType,
+      targetId,
+      params,
+      durationMs,
+    };
+
+    if (activeSim && activeSim.injectFailure) {
+      activeSim.injectFailure({
+        failureType,
+        targetId,
+        params,
+        durationMs,
+      });
+    }
+
+    const currentScript = get().scenarioScript;
+    set({
+      scenarioScript: [...currentScript, cmd],
+      narrativeEvents: [
+        ...get().narrativeEvents,
+        {
+          id: `manual-${Date.now()}`,
+          timeMs: curTime,
+          text: `Injected ${failureType} on ${targetId}`,
+          type: 'warning',
+        },
+      ],
+    });
+  },
+
+  scheduleFailure: (cmd: ScenarioCommand) => {
+    set((s) => ({
+      scenarioScript: [...s.scenarioScript, cmd],
+    }));
+  },
+
+  removeFailure: (failureId: string) => {
+    if (activeSim && activeSim.removeFailure) {
+      activeSim.removeFailure(failureId);
+    }
+    set((s) => ({
+      activeFailures: s.activeFailures.filter((f) => f.id !== failureId),
+    }));
+  },
+
+  clearScenarioScript: () => {
+    set({ scenarioScript: [], activeFailures: [] });
+  },
+
+  loadScenarioPreset: (presetId: string, baseGraph: GraphConfig) => {
+    const preset = SCENARIO_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    const modifiedGraph = preset.configureGraph(baseGraph);
+    useGraphStore.getState().loadGraph(modifiedGraph);
+
+    activeSim = null; // Invalidate current engine instance
+
+    get().setTrafficConfig(preset.traffic, modifiedGraph);
+    set({
+      scenarioScript: preset.scenarioScript,
+      narrativeEvents: [
+        {
+          id: `preset-${Date.now()}`,
+          timeMs: 0,
+          text: `Loaded preset: ${preset.title} - ${preset.subtitle}`,
+          type: 'info',
+        },
+      ],
+    });
+    get().reset(modifiedGraph);
   },
 }));
 
@@ -589,3 +764,9 @@ export const selectRequestTrace = (state: SimulationStoreState) => state.request
 export const selectIsTraceDrawerOpen = (state: SimulationStoreState) => state.isTraceDrawerOpen;
 export const selectIsTracingNextRequest = (state: SimulationStoreState) => state.isTracingNextRequest;
 export const selectFollowTrackedPacket = (state: SimulationStoreState) => state.followTrackedPacket;
+
+// Phase 7 Selectors
+export const selectScenarioScript = (state: SimulationStoreState) => state.scenarioScript;
+export const selectActiveFailures = (state: SimulationStoreState) => state.activeFailures;
+export const selectAmplificationFactor = (state: SimulationStoreState) => state.amplificationFactor;
+export const selectNarrativeEvents = (state: SimulationStoreState) => state.narrativeEvents;

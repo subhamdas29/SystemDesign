@@ -7,6 +7,7 @@ import { GraphConfig } from '../types';
 import { NodeRuntimeState, SimulationEvent } from '../types/runtime';
 import { TrafficPatternType, PatternParams, SimulationMode } from '../scenarios/traffic/types';
 import { RuntimeBottleneck } from './analysis/types';
+import { ScenarioCommand, ActiveFailure } from '../scenarios/failures/types';
 
 export interface TrafficConfig {
   rps?: number;
@@ -21,6 +22,7 @@ export interface SimulationConfig {
   graph: GraphConfig;
   traffic: TrafficConfig;
   seed: number;
+  scenarioScript?: ScenarioCommand[];
 }
 
 export interface SimulationCounters {
@@ -30,6 +32,11 @@ export interface SimulationCounters {
   failed: number;
   rejected: number;
   timedOut: number;
+  retried?: number;
+  orphanedWork?: number;
+  packetLoss?: number;
+  lateResponsesDiscarded?: number;
+  amplificationFactor?: number;
   wastedWork?: number;
 }
 
@@ -52,6 +59,8 @@ export interface SimulationSnapshot {
   isDone: boolean;
   mode?: 'discrete' | 'aggregate';
   bottleneck?: RuntimeBottleneck | null;
+  activeFailures?: ActiveFailure[];
+  amplificationFactor?: number;
 }
 
 // Commands from UI -> Engine

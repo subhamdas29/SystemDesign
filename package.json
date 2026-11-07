@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:qa": "node scripts/visual-qa.mjs"
+    "test:qa": "node scripts/visual-qa.mjs",
+    "test:qa:phase7": "node scripts/visual-qa-phase7.mjs"
   },
   "repository": {
     "type": "git",

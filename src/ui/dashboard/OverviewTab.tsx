@@ -190,6 +190,43 @@ export const OverviewTab: React.FC = () => {
             </span>
           </div>
         </div>
+
+        {/* Load Amplification Factor */}
+        <div className="p-3 rounded-xl bg-[#111113] border border-[#27272a]">
+          <div className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">
+            Load Amplification
+          </div>
+          <div
+            className={`text-base font-bold mt-1 ${
+              (system?.amplificationFactor ?? 1) > 1.25
+                ? 'text-rose-400'
+                : (system?.amplificationFactor ?? 1) > 1.05
+                ? 'text-amber-300'
+                : 'text-white'
+            }`}
+          >
+            {system?.amplificationFactor ? system.amplificationFactor.toFixed(2) : '1.00'}
+            <span className="text-xs font-normal text-[var(--color-text-faint)] ml-1">x</span>
+          </div>
+        </div>
+
+        {/* Retries & Active Chaos */}
+        <div className="p-3 rounded-xl bg-[#111113] border border-[#27272a]">
+          <div className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">
+            Retries & Chaos
+          </div>
+          <div className="text-base font-bold text-white mt-1">
+            {system?.retryRps ?? 0}
+            <span className="text-[10px] font-normal text-[var(--color-text-faint)] ml-1">
+              retries/s
+            </span>
+            {(system?.activeFailureCount ?? 0) > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] bg-red-950 text-red-300 border border-red-500/50">
+                {system?.activeFailureCount} fail
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Bottleneck Callout Banner if detected */}

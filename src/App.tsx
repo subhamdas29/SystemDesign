@@ -8,6 +8,8 @@ import { Dashboard } from './ui/components/Dashboard';
 import { EventLogPanel } from './ui/components/EventLogPanel';
 import { RequestTraceDrawer } from './ui/components/RequestTraceDrawer';
 import { RunSummaryModal } from './ui/dashboard/RunSummaryModal';
+import { ChaosPanel } from './ui/components/ChaosPanel';
+import { ScenarioPresetsModal } from './ui/components/ScenarioPresetsModal';
 import {
   useUiStore,
   selectHint,
@@ -65,6 +67,8 @@ export const App: React.FC = () => {
           <EventLogPanel />
           <RequestTraceDrawer />
           <RunSummaryModal />
+          <ChaosPanel />
+          <ScenarioPresetsModal />
 
           {/* Gentle Educational Hint Toast */}
           {hint && (

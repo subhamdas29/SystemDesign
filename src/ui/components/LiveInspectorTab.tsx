@@ -106,6 +106,7 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
 
   const history = getNodeHistory(node.id);
   const metrics = deriveLiveMetrics(node, snapshot, history.points1, history.points2);
+  const nodeState = runtimeNodes[node.id];
 
   const isBottleneck =
     staticCapacity?.bottleneckNodeId === node.id ||
@@ -165,6 +166,38 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
           </div>
         </div>
       </div>
+
+      {/* Resilience & Retries Telemetry */}
+      {Boolean(
+        nodeState &&
+          ((nodeState.retryRate ?? 0) > 0 ||
+            ((nodeState.amplificationFactor ?? 1) > 1.0) ||
+            (nodeState.orphanedWorkCount ?? 0) > 0)
+      ) && (
+        <div className="space-y-2 p-3 bg-[#18181b] rounded-lg border border-[#27272a] font-mono text-[11px]">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
+            Resilience Telemetry
+          </span>
+          {(nodeState?.retryRate ?? 0) > 0 && (
+            <div className="flex justify-between py-0.5 border-b border-[#222226]">
+              <span className="text-[var(--color-text-muted)]">Retry Traffic:</span>
+              <span className="text-amber-400 font-bold">{nodeState?.retryRate} req/s</span>
+            </div>
+          )}
+          {(nodeState?.amplificationFactor ?? 1) > 1.0 && (
+            <div className="flex justify-between py-0.5 border-b border-[#222226]">
+              <span className="text-[var(--color-text-muted)]">Amplification:</span>
+              <span className="text-rose-400 font-bold">{(nodeState?.amplificationFactor ?? 1).toFixed(2)}x</span>
+            </div>
+          )}
+          {(nodeState?.orphanedWorkCount ?? 0) > 0 && (
+            <div className="flex justify-between py-0.5">
+              <span className="text-[var(--color-text-muted)]">Orphaned Work Discarded:</span>
+              <span className="text-white font-bold">{nodeState?.orphanedWorkCount} reqs</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Component-Specific Live Metrics */}
       {metrics.appServer && (

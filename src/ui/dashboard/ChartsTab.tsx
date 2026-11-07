@@ -89,6 +89,15 @@ export const ChartsTab: React.FC = () => {
     return Math.max(clientTimeoutMs, ...chartData.latencySeries.map((p) => Math.max(p.p99Ms, p.p95Ms)));
   }, [chartData.latencySeries, clientTimeoutMs]);
 
+  // Retry traffic & amplification bounds
+  const maxRetryTraffic = useMemo(() => {
+    return Math.max(10, ...chartData.retrySeries.map((p) => Math.max(p.incomingRps, p.retryRps)));
+  }, [chartData.retrySeries]);
+
+  const maxAmplification = useMemo(() => {
+    return Math.max(2.0, ...chartData.retrySeries.map((p) => p.amplificationFactor));
+  }, [chartData.retrySeries]);
+
   // Current simulation time cursor X position
   const simCursorX = getX(simTimeMs);
   const hoverCursorX = hoveredTimeMs !== null ? getX(hoveredTimeMs) : null;
@@ -391,6 +400,92 @@ export const ChartsTab: React.FC = () => {
               />
             );
           })}
+
+          <line x1={simCursorX} y1={padding.top} x2={simCursorX} y2={padding.top + plotHeight} stroke="#ffffff" strokeWidth={1.5} />
+          {hoverCursorX !== null && (
+            <line x1={hoverCursorX} y1={padding.top} x2={hoverCursorX} y2={padding.top + plotHeight} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="3,3" />
+          )}
+        </svg>
+      </div>
+
+      {/* 5. Retries & Load Amplification Chart */}
+      <div className="p-3 rounded-xl bg-[#111113] border border-[#27272a] space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold text-white tracking-wide uppercase text-[11px]">
+            5. Retries & Load Amplification
+          </span>
+          <div className="flex items-center gap-3 text-[10px] font-mono">
+            <span className="flex items-center gap-1 text-white">
+              <span className="w-2.5 h-0.5 bg-white inline-block" /> Incoming
+            </span>
+            <span className="flex items-center gap-1 text-amber-300">
+              <span className="w-2.5 h-0.5 bg-amber-400 inline-block border-b border-dashed border-amber-400" /> Retries (RPS)
+            </span>
+            <span className="flex items-center gap-1 text-rose-300">
+              <span className="w-2.5 h-0.5 bg-rose-500 inline-block" /> Amplification (x)
+            </span>
+          </div>
+        </div>
+
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          className="w-full h-28 cursor-crosshair overflow-visible"
+          onClick={handleChartClick}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          aria-label="Retries and Load Amplification Chart"
+        >
+          {/* Incoming Baseline Line */}
+          {chartData.retrySeries.length > 1 && (
+            <path
+              d={chartData.retrySeries
+                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.incomingRps, maxRetryTraffic).toFixed(1)}`)
+                .join(' ')}
+              fill="none"
+              stroke="#ffffff"
+              strokeWidth={1.4}
+            />
+          )}
+
+          {/* Retry Traffic Line (Amber dashed) */}
+          {chartData.retrySeries.length > 1 && (
+            <path
+              d={chartData.retrySeries
+                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.retryRps, maxRetryTraffic).toFixed(1)}`)
+                .join(' ')}
+              fill="none"
+              stroke="#fbbf24"
+              strokeWidth={1.5}
+              strokeDasharray="4,3"
+            />
+          )}
+
+          {/* Amplification Factor Line (Rose dotted) */}
+          {chartData.retrySeries.length > 1 && (
+            <path
+              d={chartData.retrySeries
+                .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.amplificationFactor, maxAmplification).toFixed(1)}`)
+                .join(' ')}
+              fill="none"
+              stroke="#f43f5e"
+              strokeWidth={1.6}
+              strokeDasharray="2,2"
+            />
+          )}
+
+          {/* 1.0x baseline reference */}
+          <line
+            x1={padding.left}
+            y1={getY(1.0, maxAmplification)}
+            x2={svgWidth - padding.right}
+            y2={getY(1.0, maxAmplification)}
+            stroke="#52525b"
+            strokeWidth={1}
+            strokeDasharray="2,2"
+          />
+          <text x={svgWidth - padding.right} y={getY(1.0, maxAmplification) - 3} fill="#71717a" fontSize={8} textAnchor="end">
+            1.0x (No amplification)
+          </text>
 
           <line x1={simCursorX} y1={padding.top} x2={simCursorX} y2={padding.top + plotHeight} stroke="#ffffff" strokeWidth={1.5} />
           {hoverCursorX !== null && (

@@ -10,6 +10,9 @@ import {
   ComponentType,
   AnyComponentConfig,
   getDefaultConfig,
+  EdgeLatencyConfig,
+  EdgePresetName,
+  EDGE_PRESETS,
 } from '../types';
 import {
   createStarterGraph,
@@ -45,6 +48,9 @@ export interface GraphStoreState {
   applyPreset: (nodeId: string, preset: PresetTier) => void;
   resetNodeConfig: (nodeId: string) => void;
   applyConfigToAll: (type: ComponentType, config: AnyComponentConfig) => void;
+  updateEdgeLatency: (edgeId: string, latency: Partial<EdgeLatencyConfig>) => void;
+  applyEdgePreset: (edgeId: string, presetName: EdgePresetName) => void;
+  loadGraph: (graph: GraphConfig) => void;
   flushPendingHistory: () => void;
   undo: () => void;
   redo: () => void;
@@ -272,6 +278,54 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       history: [...history, graph],
       future: [],
       validation: validateGraph(nextGraph),
+    });
+  },
+
+  updateEdgeLatency: (edgeId: string, partialLatency: Partial<EdgeLatencyConfig>) => {
+    get().flushPendingHistory();
+    const { graph, history } = get();
+    const nextEdges = graph.edges.map((edge) => {
+      if (edge.id === edgeId) {
+        return {
+          ...edge,
+          latency: {
+            baseLatencyMs: partialLatency.baseLatencyMs ?? edge.latency?.baseLatencyMs ?? 0.5,
+            jitterMs: partialLatency.jitterMs ?? edge.latency?.jitterMs ?? 0.2,
+            packetLossPct: partialLatency.packetLossPct ?? edge.latency?.packetLossPct ?? 0,
+          },
+        };
+      }
+      return edge;
+    });
+
+    const nextGraph: GraphConfig = {
+      ...graph,
+      version: graph.version + 1,
+      edges: nextEdges,
+    };
+
+    set({
+      graph: nextGraph,
+      history: [...history, graph],
+      future: [],
+      validation: validateGraph(nextGraph),
+    });
+  },
+
+  applyEdgePreset: (edgeId: string, presetName: EdgePresetName) => {
+    const preset = EDGE_PRESETS[presetName];
+    if (!preset) return;
+    get().updateEdgeLatency(edgeId, { ...preset, preset: presetName });
+  },
+
+  loadGraph: (newGraph: GraphConfig) => {
+    get().flushPendingHistory();
+    const { graph, history } = get();
+    set({
+      graph: newGraph,
+      history: [...history, graph],
+      future: [],
+      validation: validateGraph(newGraph),
     });
   },
 

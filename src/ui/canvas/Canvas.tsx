@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
   MarkerType,
   useReactFlow,
   ReactFlowProvider,
@@ -15,6 +16,7 @@ import { CustomEdge } from './CustomEdge';
 import { AnimationCanvas } from '../animation/AnimationCanvas';
 import { useGraphStore, selectGraph, selectNodes, selectEdges } from '@store';
 import { useUiStore, selectDraggingSwapNodeId } from '@store';
+import { useSimulationStore, selectHighlightedPath } from '@store';
 import { computeLayout, COMPONENT_RULES, canSwap } from '@builder';
 import { ComponentType } from '@types';
 
@@ -33,8 +35,10 @@ const CanvasInner: React.FC = () => {
   const swapNode = useGraphStore((s) => s.swapNode);
 
   const selectNode = useUiStore((s) => s.selectNode);
+  const selectEdge = useUiStore((s) => s.selectEdge);
   const setDraggingSwapNodeId = useUiStore((s) => s.setDraggingSwapNodeId);
   const draggingSwapNodeId = useUiStore(selectDraggingSwapNodeId);
+  const highlightedPath = useSimulationStore(selectHighlightedPath);
 
   const { fitView } = useReactFlow();
   const initialFitDone = useRef(false);
@@ -67,7 +71,12 @@ const CanvasInner: React.FC = () => {
       source: edge.source,
       target: edge.target,
       type: 'custom',
-      data: { isLookup: edge.isLookup },
+      data: {
+        isLookup: edge.isLookup,
+        latency: edge.latency,
+        source: edge.source,
+        target: edge.target,
+      },
       markerEnd: {
         type: MarkerType.ArrowClosed,
         color: '#d4d4d4',
@@ -80,7 +89,7 @@ const CanvasInner: React.FC = () => {
   // Fit view on load, whenever graph structure changes, and on window resize
   useEffect(() => {
     const handleFit = () => {
-      fitView({ padding: 0.2, minZoom: 0.15, maxZoom: 1.2, duration: initialFitDone.current ? 300 : 0 });
+      fitView({ padding: 0.22, minZoom: 0.7, maxZoom: 1.2, duration: initialFitDone.current ? 300 : 0 });
       initialFitDone.current = true;
     };
 
@@ -92,6 +101,26 @@ const CanvasInner: React.FC = () => {
       clearTimeout(timer);
     };
   }, [graph.version, fitView]);
+
+  const handleFitAll = () => {
+    fitView({ padding: 0.22, minZoom: 0.7, maxZoom: 1.2, duration: 300 });
+  };
+
+  const handleFocusPath = () => {
+    if (highlightedPath.length > 0) {
+      const pathNodes = flowNodes.filter((n) => highlightedPath.includes(n.id));
+      if (pathNodes.length > 0) {
+        fitView({ nodes: pathNodes, padding: 0.3, duration: 300 });
+        return;
+      }
+    }
+    // Default path from client to database if no specific request tracked
+    const mainPathNodes = flowNodes.filter((n) => {
+      const type = (n.data as { type?: string })?.type;
+      return type === 'client' || type === 'load-balancer' || type === 'app-server' || type === 'database';
+    });
+    fitView({ nodes: mainPathNodes.length > 0 ? mainPathNodes : flowNodes, padding: 0.25, duration: 300 });
+  };
 
   // Handle Drag Swap
   const handleNodeDragStart = (_event: MouseEvent | TouchEvent, node: Node) => {
@@ -146,10 +175,21 @@ const CanvasInner: React.FC = () => {
         nodesDraggable={true} // restricted per-node via node.draggable
         nodesConnectable={false}
         elementsSelectable={true}
-        onPaneClick={() => selectNode(null)}
+        onPaneClick={() => {
+          selectNode(null);
+          selectEdge(null);
+        }}
+        onNodeClick={(_, node) => {
+          selectNode(node.id);
+          selectEdge(null);
+        }}
+        onEdgeClick={(_, edge) => {
+          selectEdge(edge.id);
+          selectNode(null);
+        }}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
-        minZoom={0.15}
+        minZoom={0.5}
         maxZoom={1.8}
         proOptions={{ hideAttribution: true }}
       >
@@ -159,7 +199,35 @@ const CanvasInner: React.FC = () => {
           showInteractive={false}
           className="!bg-[#111113] !border !border-[#3f3f46] !rounded-lg overflow-hidden !shadow-lg [&>button]:!bg-[#111113] [&>button]:!border-b [&>button]:!border-[#27272a] [&>button]:!fill-[#d4d4d4] hover:[&>button]:!bg-[#18181b]"
         />
+        <MiniMap
+          nodeColor="#52525b"
+          maskColor="rgba(0, 0, 0, 0.75)"
+          className="!bg-[#111113] !border !border-[#3f3f46] !rounded-lg overflow-hidden !shadow-xl !m-3"
+          style={{ width: 150, height: 95 }}
+        />
       </ReactFlow>
+
+      {/* Focus Path & Fit All Zoom Controls */}
+      <div className="absolute bottom-20 left-3 z-10 flex flex-col gap-1.5 font-mono">
+        <button
+          type="button"
+          onClick={handleFocusPath}
+          title="Zoom to active request path or core pipeline"
+          className="px-2.5 py-1.5 bg-[#111113]/90 hover:bg-[#18181b] text-white hover:text-white border border-[#3f3f46] hover:border-white rounded-md text-[11px] shadow-md flex items-center gap-1.5 transition-all backdrop-blur-sm"
+        >
+          <span>🎯</span>
+          <span>Focus Path</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleFitAll}
+          title="Fit all architecture components on screen"
+          className="px-2.5 py-1.5 bg-[#111113]/90 hover:bg-[#18181b] text-[var(--color-text-secondary)] hover:text-white border border-[#3f3f46] hover:border-white rounded-md text-[11px] shadow-md flex items-center gap-1.5 transition-all backdrop-blur-sm"
+        >
+          <span>⤢</span>
+          <span>Fit All</span>
+        </button>
+      </div>
     </div>
   );
 };

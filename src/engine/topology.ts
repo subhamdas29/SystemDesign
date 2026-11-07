@@ -3,7 +3,7 @@
  * Pure TypeScript with ZERO React imports.
  */
 
-import { GraphConfig, GraphNode, ComponentType, AnyComponentConfig } from '../types';
+import { GraphConfig, GraphNode, GraphEdge, ComponentType, AnyComponentConfig } from '../types';
 import { NodeRuntimeState } from '../types/runtime';
 import { COMPONENT_RULES } from '../builder/rules/slotRules';
 import { createPRNG, PRNG } from './rng';
@@ -34,6 +34,7 @@ export interface EngineTopology {
   forwardingChain: string[][]; // Node IDs grouped by occupied slots (excluding DNS)
   outgoingEdges: Map<string, string[]>;
   incomingEdges: Map<string, string[]>;
+  edges: Map<string, GraphEdge>;
 }
 
 /**
@@ -95,6 +96,7 @@ export function buildTopology(graph: GraphConfig, masterSeed: number): EngineTop
   const nodes = new Map<string, RuntimeNode>();
   const outgoingEdges = new Map<string, string[]>();
   const incomingEdges = new Map<string, string[]>();
+  const edges = new Map<string, GraphEdge>();
 
   for (const node of graph.nodes) {
     const slot = COMPONENT_RULES[node.type]?.slot ?? 99;
@@ -133,6 +135,8 @@ export function buildTopology(graph: GraphConfig, masterSeed: number): EngineTop
   for (const edge of graph.edges) {
     outgoingEdges.get(edge.source)?.push(edge.target);
     incomingEdges.get(edge.target)?.push(edge.source);
+    edges.set(edge.id, edge);
+    edges.set(`${edge.source}->${edge.target}`, edge);
   }
 
   // Find key structural nodes
@@ -166,5 +170,6 @@ export function buildTopology(graph: GraphConfig, masterSeed: number): EngineTop
     forwardingChain,
     outgoingEdges,
     incomingEdges,
+    edges,
   };
 }

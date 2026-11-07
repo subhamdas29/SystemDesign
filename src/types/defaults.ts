@@ -3,22 +3,23 @@
  * Used during node insertion, reset, or when swapping components.
  */
 
-import type {
-  ComponentType,
-  ClientConfig,
-  DnsConfig,
-  CdnConfig,
-  RouterConfig,
-  FirewallConfig,
-  WafConfig,
-  RateLimiterConfig,
-  LoadBalancerConfig,
-  ApiGatewayConfig,
-  AppServerConfig,
-  CacheConfig,
-  DatabaseConfig,
-  MessageQueueConfig,
-  AnyComponentConfig,
+import {
+  type ComponentType,
+  type ClientConfig,
+  type DnsConfig,
+  type CdnConfig,
+  type RouterConfig,
+  type FirewallConfig,
+  type WafConfig,
+  type RateLimiterConfig,
+  type LoadBalancerConfig,
+  type ApiGatewayConfig,
+  type AppServerConfig,
+  type CacheConfig,
+  type DatabaseConfig,
+  type MessageQueueConfig,
+  type AnyComponentConfig,
+  RETRY_PRESETS,
 } from './components';
 
 export const DEFAULT_CONFIGS: {
@@ -40,16 +41,20 @@ export const DEFAULT_CONFIGS: {
     readRatio: 80,
     requestTimeoutMs: 5000,
     rps: 500,
+    variabilityCv: 0.5,
+    retryPolicy: RETRY_PRESETS.none,
   },
   dns: {
     lookupLatencyMs: 15,
     ttlSeconds: 300,
     cacheHitRatio: 90,
+    variabilityCv: 0.5,
   },
   router: {
     capacityRps: 50000,
     processingLatencyMs: 2,
     queueLimit: 1000,
+    variabilityCv: 0.5,
   },
   'load-balancer': {
     algorithm: 'round-robin',
@@ -57,6 +62,11 @@ export const DEFAULT_CONFIGS: {
     processingLatencyMs: 3,
     queueLimit: 2000,
     healthCheckIntervalMs: 5000,
+    upstreamTimeoutMs: 5000,
+    unhealthyThreshold: 3,
+    healthyThreshold: 2,
+    variabilityCv: 0.5,
+    retryPolicy: RETRY_PRESETS.none,
   },
   'app-server': {
     maxThroughputRps: 1000,
@@ -67,6 +77,10 @@ export const DEFAULT_CONFIGS: {
     queueSize: 500,
     overloadBehavior: 'reject',
     health: 'healthy',
+    databaseTimeoutMs: 3000,
+    cacheTimeoutMs: 500,
+    variabilityCv: 0.5,
+    retryPolicy: RETRY_PRESETS.none,
   },
   cache: {
     capacityMb: 1024,
@@ -74,6 +88,8 @@ export const DEFAULT_CONFIGS: {
     hitRatio: 85,
     ttlSeconds: 3600,
     populateOnMiss: true,
+    variabilityCv: 0.5,
+    warmupPeriodMs: 10000,
   },
   database: {
     maxQueryThroughputQps: 500,
@@ -82,6 +98,7 @@ export const DEFAULT_CONFIGS: {
     queueCapacity: 200,
     readQueryLatencyMs: 30,
     writeQueryLatencyMs: 60,
+    variabilityCv: 0.5,
   },
   cdn: {
     capacityRps: 100000,

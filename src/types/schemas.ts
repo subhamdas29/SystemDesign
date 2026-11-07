@@ -8,6 +8,15 @@ import { COMPONENT_TYPES, ComponentType } from './components';
 
 export const ComponentTypeSchema = z.enum(COMPONENT_TYPES);
 
+export const RetryPolicySchema = z.object({
+  maxAttempts: z.number().int().min(1).max(5),
+  retryOn: z.array(z.enum(['timeout', '5xx', 'rejected', 'connection_failure'])),
+  backoff: z.enum(['none', 'fixed', 'exponential', 'exponential_jitter']),
+  baseDelayMs: z.number().min(0).max(10000),
+  maxDelayMs: z.number().min(0).max(60000),
+  retryBudgetPct: z.number().min(0).max(100).optional(),
+});
+
 export const ClientConfigSchema = z.object({
   readRatio: z
     .number({ error: 'Read ratio must be a number' })
@@ -21,6 +30,8 @@ export const ClientConfigSchema = z.object({
     .number({ error: 'RPS must be a number' })
     .min(1, 'RPS must be at least 1 req/s')
     .max(1000000, 'RPS cannot exceed 1,000,000 req/s'),
+  variabilityCv: z.number().min(0).max(5).optional(),
+  retryPolicy: RetryPolicySchema.optional(),
 });
 
 export const DnsConfigSchema = z.object({
@@ -36,6 +47,7 @@ export const DnsConfigSchema = z.object({
     .number({ error: 'DNS hit ratio must be a number' })
     .min(0, 'DNS hit ratio cannot be less than 0%')
     .max(100, 'DNS hit ratio cannot exceed 100%'),
+  variabilityCv: z.number().min(0).max(5).optional(),
 });
 
 export const RouterConfigSchema = z.object({
@@ -51,6 +63,7 @@ export const RouterConfigSchema = z.object({
     .number({ error: 'Queue limit must be a number' })
     .min(0, 'Queue limit cannot be negative')
     .max(100000, 'Queue limit cannot exceed 100,000 packets'),
+  variabilityCv: z.number().min(0).max(5).optional(),
 });
 
 export const LoadBalancerConfigSchema = z.object({
@@ -73,6 +86,11 @@ export const LoadBalancerConfigSchema = z.object({
     .number({ error: 'Health check interval must be a number' })
     .min(500, 'Health check interval must be at least 500 ms')
     .max(60000, 'Health check interval cannot exceed 60,000 ms'),
+  upstreamTimeoutMs: z.number().min(50).max(60000).optional(),
+  unhealthyThreshold: z.number().int().min(1).max(10).optional(),
+  healthyThreshold: z.number().int().min(1).max(10).optional(),
+  variabilityCv: z.number().min(0).max(5).optional(),
+  retryPolicy: RetryPolicySchema.optional(),
   perBackendWeights: z.record(z.string(), z.number().min(1).max(100)).optional(),
 });
 
@@ -107,6 +125,10 @@ export const AppServerConfigSchema = z.object({
   health: z.enum(['healthy', 'degraded', 'down'], {
     error: 'Health must be healthy, degraded, or down',
   }),
+  databaseTimeoutMs: z.number().min(50).max(60000).optional(),
+  cacheTimeoutMs: z.number().min(10).max(30000).optional(),
+  variabilityCv: z.number().min(0).max(5).optional(),
+  retryPolicy: RetryPolicySchema.optional(),
 });
 
 export const CacheConfigSchema = z.object({
@@ -127,6 +149,8 @@ export const CacheConfigSchema = z.object({
     .min(1, 'TTL must be at least 1 second')
     .max(604800, 'TTL cannot exceed 604,800 seconds (7 days)'),
   populateOnMiss: z.boolean({ error: 'Populate on miss must be true or false' }),
+  variabilityCv: z.number().min(0).max(5).optional(),
+  warmupPeriodMs: z.number().min(0).max(60000).optional(),
 });
 
 export const DatabaseConfigSchema = z.object({
@@ -154,6 +178,7 @@ export const DatabaseConfigSchema = z.object({
     .number({ error: 'Write query latency must be a number' })
     .min(1, 'Write latency must be at least 1 ms')
     .max(5000, 'Write latency cannot exceed 5,000 ms'),
+  variabilityCv: z.number().min(0).max(5).optional(),
 });
 
 // Stubs for remaining components
@@ -244,12 +269,20 @@ export const GraphNodeSchema = z.object({
   label: z.string().optional(),
 });
 
+export const EdgeLatencyConfigSchema = z.object({
+  preset: z.string().optional(),
+  baseLatencyMs: z.number().min(0).max(10000),
+  jitterMs: z.number().min(0).max(5000),
+  packetLossPct: z.number().min(0).max(100),
+});
+
 export const GraphEdgeSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
   target: z.string().min(1),
   kind: z.enum(['request', 'replication']),
   isLookup: z.boolean().optional(),
+  latency: EdgeLatencyConfigSchema.optional(),
 });
 
 export const GraphConfigSchema = z.object({

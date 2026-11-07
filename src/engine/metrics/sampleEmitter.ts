@@ -33,12 +33,16 @@ export function emitMetricsSample(
   const timedOutDelta = previousSnapshot
     ? Math.max(0, snapshot.counters.timedOut - previousSnapshot.counters.timedOut)
     : snapshot.counters.timedOut;
+  const retriedDelta = previousSnapshot
+    ? Math.max(0, (snapshot.counters.retried ?? 0) - (previousSnapshot.counters.retried ?? 0))
+    : (snapshot.counters.retried ?? 0);
 
   const incomingRps = Math.round(createdDelta / timeDeltaSec);
   const successfulRps = Math.round(succeededDelta / timeDeltaSec);
   const failedRps = Math.round(failedDelta / timeDeltaSec);
   const rejectedRps = Math.round(rejectedDelta / timeDeltaSec);
   const timedOutRps = Math.round(timedOutDelta / timeDeltaSec);
+  const retryRps = Math.round(retriedDelta / timeDeltaSec);
 
   // Server instance counts
   const appNodes = graph.nodes.filter((n) => n.type === 'app-server');
@@ -68,6 +72,11 @@ export function emitMetricsSample(
     failedRps,
     rejectedRps,
     timedOutRps,
+    retryRps,
+    amplificationFactor: snapshot.amplificationFactor ?? 1.0,
+    orphanedWorkCount: snapshot.counters.orphanedWork ?? 0,
+    packetLossCount: snapshot.counters.packetLoss ?? 0,
+    activeFailureCount: snapshot.activeFailures?.length ?? 0,
     avgLatencyMs: snapshot.latencySummary.averageMs,
     p50Ms: snapshot.latencySummary.p50Ms,
     p95Ms: snapshot.latencySummary.p95Ms,

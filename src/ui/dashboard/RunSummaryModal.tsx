@@ -115,9 +115,9 @@ export const RunSummaryModal: React.FC = () => {
           </div>
 
           {/* Primary Metrics Grid */}
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
             <div className="p-3 rounded-xl bg-[#141417] border border-[#27272a]">
-              <div className="text-[10px] text-[var(--color-text-muted)] uppercase">Peak Handled vs Offered</div>
+              <div className="text-[10px] text-[var(--color-text-muted)] uppercase">Peak Handled</div>
               <div className="text-sm font-bold text-white mt-1">
                 {summary.peakRpsHandled.toLocaleString()}{' '}
                 <span className="text-[10px] font-normal text-[var(--color-text-faint)]">
@@ -137,12 +137,62 @@ export const RunSummaryModal: React.FC = () => {
             </div>
 
             <div className="p-3 rounded-xl bg-[#141417] border border-[#27272a]">
-              <div className="text-[10px] text-[var(--color-text-muted)] uppercase">Total Errors & Drops</div>
+              <div className="text-[10px] text-[var(--color-text-muted)] uppercase">Peak Amplification</div>
+              <div
+                className={`text-sm font-bold mt-1 ${
+                  (summary.peakAmplificationFactor ?? 1) > 1.25 ? 'text-rose-400' : 'text-white'
+                }`}
+              >
+                {summary.peakAmplificationFactor ? summary.peakAmplificationFactor.toFixed(2) : '1.00'}x
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#141417] border border-[#27272a]">
+              <div className="text-[10px] text-[var(--color-text-muted)] uppercase">Total Retries</div>
               <div className="text-sm font-bold text-amber-300 mt-1">
-                {(summary.totalFailed + summary.totalRejected + summary.totalTimedOut).toLocaleString()}
+                {(summary.totalRetries ?? 0).toLocaleString()}
               </div>
             </div>
           </div>
+
+          {/* Cascade Event Timeline */}
+          {summary.cascadeTimeline && summary.cascadeTimeline.length > 0 && (
+            <div className="p-4 rounded-xl bg-[#141417] border border-[#27272a] space-y-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <span>⚡</span> Cascade Failure Timeline
+              </h3>
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {summary.cascadeTimeline.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2 rounded bg-[#0e0e11] border border-[#27272a] flex items-start justify-between text-[11px]"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[var(--color-text-muted)] font-mono">
+                          {formatSec(item.timeMs)}
+                        </span>
+                        <span
+                          className={`font-bold ${
+                            item.severity === 'critical'
+                              ? 'text-red-400'
+                              : item.severity === 'warning'
+                              ? 'text-amber-300'
+                              : 'text-zinc-300'
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--color-text-secondary)] mt-0.5">
+                        {item.description}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Diagnosis: What Broke First */}
           <div className="p-4 rounded-xl bg-[#141417] border border-[#27272a] space-y-2.5">

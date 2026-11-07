@@ -6,6 +6,7 @@ import {
   selectValidation,
 } from '@store';
 import { useUiStore, selectAppMode } from '@store';
+import { useSimulationStore, selectActiveFailures } from '@store';
 
 export const Header: React.FC = () => {
   const canUndo = useGraphStore(selectCanUndo);
@@ -17,6 +18,9 @@ export const Header: React.FC = () => {
 
   const mode = useUiStore(selectAppMode);
   const setMode = useUiStore((s) => s.setMode);
+  const togglePresetModal = useUiStore((s) => s.togglePresetModal);
+  const toggleChaosPanel = useUiStore((s) => s.toggleChaosPanel);
+  const activeFailures = useSimulationStore(selectActiveFailures);
 
   // Global keyboard shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z)
   useEffect(() => {
@@ -84,8 +88,41 @@ export const Header: React.FC = () => {
         </button>
       </div>
 
-      {/* History Controls & Architecture Health */}
-      <div className="flex items-center gap-3">
+      {/* History Controls, Scenarios, Chaos & Architecture Health */}
+      <div className="flex items-center gap-2.5">
+        {/* Scenarios Preset Picker */}
+        <button
+          type="button"
+          onClick={togglePresetModal}
+          title="Open Disaster & Cascade Scenario Presets"
+          className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5 shadow-sm"
+        >
+          <span>🌪️</span>
+          <span>Scenarios</span>
+        </button>
+
+        {/* Chaos & Failures Toggle */}
+        <button
+          type="button"
+          onClick={toggleChaosPanel}
+          title="Inject or Schedule Failure Injections"
+          className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm border ${
+            activeFailures.length > 0
+              ? 'bg-red-950/80 text-red-200 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] animate-pulse'
+              : 'bg-[#18181b] hover:bg-[#222226] text-white border-[#3f3f46] hover:border-white'
+          }`}
+        >
+          <span>⚡</span>
+          <span>Chaos</span>
+          {activeFailures.length > 0 && (
+            <span className="px-1.5 py-0.2 text-[9px] font-mono font-bold rounded-full bg-red-600 text-white">
+              {activeFailures.length}
+            </span>
+          )}
+        </button>
+
+        <div className="h-5 w-px bg-[#27272a]" />
+
         {/* Undo, Redo, Reset */}
         <div className="flex items-center gap-1">
           <button

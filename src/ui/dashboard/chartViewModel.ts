@@ -36,12 +36,21 @@ export interface QueueChartPoint {
   nodes: Record<string, { queue: number; limit: number }>;
 }
 
+export interface RetryAmplificationPoint {
+  timeMs: number;
+  timeSec: number;
+  incomingRps: number;
+  retryRps: number;
+  amplificationFactor: number;
+}
+
 export interface FormattedChartData {
   timeRange: { minMs: number; maxMs: number };
   trafficSeries: TrafficChartPoint[];
   latencySeries: LatencyChartPoint[];
   utilizationSeries: UtilizationChartPoint[];
   queueSeries: QueueChartPoint[];
+  retrySeries: RetryAmplificationPoint[];
   topNodes: string[];
   clientTimeoutMs: number;
   events: ChartNotableEvent[];
@@ -64,6 +73,7 @@ export function buildChartViewModel(
       latencySeries: [],
       utilizationSeries: [],
       queueSeries: [],
+      retrySeries: [],
       topNodes: [],
       clientTimeoutMs,
       events: [],
@@ -110,6 +120,7 @@ export function buildChartViewModel(
   const latencySeries: LatencyChartPoint[] = [];
   const utilizationSeries: UtilizationChartPoint[] = [];
   const queueSeries: QueueChartPoint[] = [];
+  const retrySeries: RetryAmplificationPoint[] = [];
 
   let peakTraffic = 0;
   let peakLatency = 0;
@@ -133,6 +144,14 @@ export function buildChartViewModel(
       avgMs: Math.round(s.system.avgLatencyMs),
       p95Ms: Math.round(s.system.p95Ms),
       p99Ms: Math.round(s.system.p99Ms),
+    });
+
+    retrySeries.push({
+      timeMs: s.timeMs,
+      timeSec,
+      incomingRps: s.system.incomingRps,
+      retryRps: s.system.retryRps ?? 0,
+      amplificationFactor: s.system.amplificationFactor ?? 1.0,
     });
 
     const nodeUtils: Record<string, number> = {};
@@ -202,6 +221,7 @@ export function buildChartViewModel(
     latencySeries,
     utilizationSeries,
     queueSeries,
+    retrySeries,
     topNodes,
     clientTimeoutMs,
     events,

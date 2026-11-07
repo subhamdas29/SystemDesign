@@ -18,6 +18,10 @@ export interface NodeRuntimeState {
   activeConnections: number;
   errorRate: number; // 0.0 to 1.0
   p99LatencyMs: number;
+  retryRate?: number;
+  amplificationFactor?: number;
+  orphanedWorkCount?: number;
+  healthCheckState?: 'healthy' | 'probing' | 'unhealthy';
 }
 
 export type SimulationEventType =
@@ -34,6 +38,14 @@ export type SimulationEventType =
   | 'REQUEST_REJECTED'
   | 'REQUEST_FAILED'
   | 'REQUEST_TIMED_OUT'
+  | 'REQUEST_RETRIED'
+  | 'PACKET_LOST'
+  | 'ORPHANED_WORK_DISCARDED'
+  | 'LATE_RESPONSE_DISCARDED'
+  | 'FAILURE_INJECTED'
+  | 'FAILURE_REMOVED'
+  | 'HEALTH_CHECK_FAILED'
+  | 'HEALTH_CHECK_RECOVERED'
   | 'RESPONSE_RECEIVED';
 
 export interface SimulationEvent {
@@ -43,6 +55,7 @@ export interface SimulationEvent {
   requestId: string;
   nodeId: string;
   targetNodeId?: string;
+  failureType?: string;
   details?: Record<string, unknown>;
 }
 

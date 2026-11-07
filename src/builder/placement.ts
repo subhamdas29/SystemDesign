@@ -14,6 +14,7 @@ import {
   getDefaultConfig,
   AnyComponentConfig,
   validateNodeConfig,
+  EDGE_PRESETS,
 } from '../types';
 import { COMPONENT_RULES } from './rules/slotRules';
 
@@ -132,9 +133,15 @@ export function canAdd(graph: GraphConfig, type: ComponentType): CanAddResult {
  * Connects every node in an occupied slot to every node in the next occupied slot.
  * DNS is flagged with isLookup = true.
  */
-export function generateEdges(nodes: GraphNode[]): GraphEdge[] {
+export function generateEdges(nodes: GraphNode[], existingEdges: GraphEdge[] = []): GraphEdge[] {
   if (nodes.length <= 1) {
     return [];
+  }
+
+  const existingMap = new Map<string, GraphEdge>();
+  for (const e of existingEdges) {
+    existingMap.set(e.id, e);
+    existingMap.set(`${e.source}->${e.target}`, e);
   }
 
   // Group nodes by their assigned slot number
@@ -163,12 +170,20 @@ export function generateEdges(nodes: GraphNode[]): GraphEdge[] {
       const isLookup = COMPONENT_RULES[sourceNode.type]?.pathBehavior === 'lookup';
 
       for (const targetNode of nextNodes) {
+        const edgeId = `edge-${sourceNode.id}->${targetNode.id}`;
+        const prev = existingMap.get(edgeId) || existingMap.get(`${sourceNode.id}->${targetNode.id}`);
+        const defaultLatency =
+          sourceNode.type === 'client'
+            ? { ...EDGE_PRESETS['public-internet'] }
+            : { ...EDGE_PRESETS['same-datacenter'] };
+
         edges.push({
-          id: `edge-${sourceNode.id}->${targetNode.id}`,
+          id: edgeId,
           source: sourceNode.id,
           target: targetNode.id,
           kind: 'request',
           isLookup,
+          latency: prev?.latency ? { ...prev.latency } : defaultLatency,
         });
       }
     }
@@ -203,7 +218,7 @@ export function addComponent(graph: GraphConfig, type: ComponentType): GraphConf
     return a.id.localeCompare(b.id);
   });
 
-  const newEdges = generateEdges(newNodes);
+  const newEdges = generateEdges(newNodes, graph.edges);
 
   return {
     version: graph.version + 1,
@@ -274,7 +289,7 @@ export function removeComponent(graph: GraphConfig, nodeId: string): GraphConfig
   }
 
   const newNodes = graph.nodes.filter((n) => n.id !== nodeId);
-  const newEdges = generateEdges(newNodes);
+  const newEdges = generateEdges(newNodes, graph.edges);
 
   return {
     version: graph.version + 1,
@@ -338,7 +353,7 @@ export function swapComponent(graph: GraphConfig, nodeId: string, targetType: Co
   };
 
   const newNodes = graph.nodes.map((n) => (n.id === nodeId ? swappedNode : n));
-  const newEdges = generateEdges(newNodes);
+  const newEdges = generateEdges(newNodes, graph.edges);
 
   return {
     version: graph.version + 1,

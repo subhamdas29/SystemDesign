@@ -85,6 +85,8 @@ export function buildRunSummary(params: {
   // Peak RPS calculations
   let peakHandled = 0;
   let peakOffered = traffic.peakRps ?? 100;
+  let peakAmplification = finalSnapshot.amplificationFactor ?? 1.0;
+
   for (const s of samples) {
     if (s.system.successfulRps > peakHandled) {
       peakHandled = s.system.successfulRps;
@@ -92,7 +94,67 @@ export function buildRunSummary(params: {
     if (s.system.incomingRps > peakOffered) {
       peakOffered = s.system.incomingRps;
     }
+    if (s.system.amplificationFactor && s.system.amplificationFactor > peakAmplification) {
+      peakAmplification = s.system.amplificationFactor;
+    }
   }
+
+  // Build cascade timeline from events and samples
+  const cascadeTimeline: import('../../types/metrics').CascadeTimelineEvent[] = [];
+  const events = finalSnapshot.recentEvents || [];
+
+  for (const ev of events) {
+    if (ev.type === 'FAILURE_INJECTED') {
+      cascadeTimeline.push({
+        timeMs: ev.timestamp,
+        type: 'failure_injected',
+        label: `Failure Injected: ${ev.failureType}`,
+        description: `Injected ${ev.failureType} on ${ev.nodeId}`,
+        severity: 'critical',
+      });
+    } else if (ev.type === 'FAILURE_REMOVED') {
+      cascadeTimeline.push({
+        timeMs: ev.timestamp,
+        type: 'recovery',
+        label: `Failure Removed`,
+        description: `Failure on ${ev.nodeId} was resolved/removed`,
+        severity: 'info',
+      });
+    } else if (ev.type === 'HEALTH_CHECK_FAILED') {
+      cascadeTimeline.push({
+        timeMs: ev.timestamp,
+        type: 'saturation',
+        label: `Health Check Failed`,
+        description: `Load balancer marked ${ev.nodeId} unhealthy and removed it from rotation`,
+        severity: 'warning',
+      });
+    } else if (ev.type === 'HEALTH_CHECK_RECOVERED') {
+      cascadeTimeline.push({
+        timeMs: ev.timestamp,
+        type: 'recovery',
+        label: `Health Check Recovered`,
+        description: `Load balancer detected ${ev.nodeId} healthy and returned it to rotation`,
+        severity: 'info',
+      });
+    }
+  }
+
+  // Detect retry storms in samples if not already in timeline
+  let retryStormRecorded = false;
+  for (const s of samples) {
+    if (!retryStormRecorded && s.system.amplificationFactor && s.system.amplificationFactor >= 1.5) {
+      cascadeTimeline.push({
+        timeMs: s.timeMs,
+        type: 'retry_storm',
+        label: 'Retry Storm Detected',
+        description: `Retries amplified traffic to ${(s.system.amplificationFactor * 100).toFixed(0)}% of baseline load`,
+        severity: 'critical',
+      });
+      retryStormRecorded = true;
+    }
+  }
+
+  cascadeTimeline.sort((a, b) => a.timeMs - b.timeMs);
 
   // First saturated component identification
   let firstSaturated: FirstSaturatedComponent | null = null;
@@ -162,6 +224,14 @@ export function buildRunSummary(params: {
     ? `${capacityAnalysis.bottleneckNodeId}: ${capacityAnalysis.explanation}`
     : null;
 
+  if (peakAmplification > 1.25 || (finalSnapshot.counters.retried ?? 0) > 50) {
+    suggestedFixes.unshift({
+      title: 'Configure Exponential Backoff with Jitter',
+      description: `Client retries amplified load by ${peakAmplification.toFixed(1)}x. Switch retry policy to exponential backoff with full jitter and a 20% retry budget to suppress cascades.`,
+      componentType: 'client',
+    });
+  }
+
   const summaryData: RunSummaryData = {
     totalRequests: totalCreated,
     successRatePercent,
@@ -173,6 +243,9 @@ export function buildRunSummary(params: {
     totalFailed,
     totalRejected,
     totalTimedOut,
+    totalRetries: finalSnapshot.counters.retried ?? 0,
+    peakAmplificationFactor: Math.round(peakAmplification * 100) / 100,
+    cascadeTimeline,
     firstSaturatedComponent: firstSaturated,
     identifiedBottleneck,
     timeSpentDegradedMs: Math.round(timeDegradedMs),

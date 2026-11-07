@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useGraphStore, selectGraph, selectNodes } from '@store';
-import { useUiStore, selectSelectedNodeId } from '@store';
+import { useUiStore, selectSelectedNodeId, selectSelectedEdgeId } from '@store';
 import { useSimulationStore, selectStaticCapacity, selectRuntimeBottleneck } from '@store';
 import { COMPONENT_RULES, canRemove, canSwap, ComponentSlotRule } from '@builder';
 import { ComponentIcon } from './ComponentIcon';
 import { ConfigForm } from './ConfigForm';
 import { LiveInspectorTab } from './LiveInspectorTab';
 import { ComponentType } from '@types';
+import { EDGE_PRESETS, EdgePresetName } from '../../types/graph';
 import { analyzeCapacity } from '../../engine/analysis/capacityAnalysis';
 import { formatRps, formatPercent } from '../../design/formatters';
 
@@ -19,13 +20,19 @@ export const InspectorPanel: React.FC = () => {
 
   const selectedNodeId = useUiStore(selectSelectedNodeId);
   const selectNode = useUiStore((s) => s.selectNode);
+  const selectedEdgeId = useUiStore(selectSelectedEdgeId);
+  const selectEdge = useUiStore((s) => s.selectEdge);
   const toggleInspector = useUiStore((s) => s.toggleInspector);
+
+  const updateEdgeLatency = useGraphStore((s) => s.updateEdgeLatency);
+  const applyEdgePreset = useGraphStore((s) => s.applyEdgePreset);
 
   const storeCapacity = useSimulationStore(selectStaticCapacity);
   const runtimeBottleneck = useSimulationStore(selectRuntimeBottleneck);
   const capacity = storeCapacity ?? analyzeCapacity(graph);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+  const selectedEdge = graph.edges.find((e) => e.id === selectedEdgeId);
   const rule: ComponentSlotRule | undefined = selectedNode
     ? COMPONENT_RULES[selectedNode.type]
     : undefined;
@@ -71,10 +78,13 @@ export const InspectorPanel: React.FC = () => {
           <p className="text-xs text-[var(--color-text-muted)]">Configuration & Capacity</p>
         </div>
         <div className="flex items-center gap-2">
-          {selectedNode && (
+          {(selectedNode || selectedEdge) && (
             <button
               type="button"
-              onClick={() => selectNode(null)}
+              onClick={() => {
+                selectNode(null);
+                selectEdge(null);
+              }}
               className="text-xs text-[var(--color-text-faint)] hover:text-white px-2 py-1 rounded hover:bg-[#1f1f23] transition-colors"
             >
               Clear
@@ -235,6 +245,137 @@ export const InspectorPanel: React.FC = () => {
                 </div>
               </>
             )}
+          </div>
+        ) : selectedEdge ? (
+          <div className="p-4 space-y-4 font-mono text-xs">
+            {/* Edge Header */}
+            <div className="p-3 bg-[#18181b] rounded-xl border border-[#27272a] space-y-2">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)]">
+                Network Connection
+              </div>
+              <div className="flex items-center justify-between text-white font-bold">
+                <span className="truncate max-w-[100px]">{selectedEdge.source}</span>
+                <span className="text-[var(--color-text-muted)]">➔</span>
+                <span className="truncate max-w-[100px]">{selectedEdge.target}</span>
+              </div>
+              <div className="text-[10px] text-[var(--color-text-muted)]">
+                Edge ID: <span className="text-white">{selectedEdge.id}</span>
+              </div>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block">
+                Latency Preset
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(
+                  [
+                    'same-machine',
+                    'same-datacenter',
+                    'cross-zone',
+                    'cross-region',
+                    'public-internet',
+                  ] as EdgePresetName[]
+                ).map((presetKey) => {
+                  const p = EDGE_PRESETS[presetKey];
+                  const isActive =
+                    selectedEdge.latency?.preset === presetKey ||
+                    (!selectedEdge.latency?.preset &&
+                      selectedEdge.latency?.baseLatencyMs === p.baseLatencyMs);
+
+                  return (
+                    <button
+                      key={presetKey}
+                      type="button"
+                      onClick={() => applyEdgePreset(selectedEdge.id, presetKey)}
+                      className={`p-2 rounded-lg text-left transition-all border ${
+                        isActive
+                          ? 'bg-white text-black font-bold border-white shadow-[0_0_8px_rgba(255,255,255,0.4)]'
+                          : 'bg-[#18181b] hover:bg-[#202024] text-white border-[#27272a] hover:border-white'
+                      }`}
+                    >
+                      <div className="text-[11px] truncate capitalize">{presetKey.replace('-', ' ')}</div>
+                      <div className={`text-[9px] ${isActive ? 'text-neutral-800' : 'text-[var(--color-text-muted)]'}`}>
+                        {p.baseLatencyMs}ms (±{p.jitterMs}ms)
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Manual Latency Sliders */}
+            <div className="p-3 bg-[#18181b] rounded-xl border border-[#27272a] space-y-3">
+              <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)]">
+                Custom Edge Latency
+              </div>
+
+              {/* Base Latency */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[var(--color-text-muted)]">Base Latency:</span>
+                  <span className="text-white font-bold">{selectedEdge.latency?.baseLatencyMs ?? 0.5} ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="150"
+                  step="0.5"
+                  value={selectedEdge.latency?.baseLatencyMs ?? 0.5}
+                  onChange={(e) =>
+                    updateEdgeLatency(selectedEdge.id, {
+                      baseLatencyMs: parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full accent-white cursor-pointer"
+                />
+              </div>
+
+              {/* Jitter */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[var(--color-text-muted)]">Jitter:</span>
+                  <span className="text-white font-bold">±{selectedEdge.latency?.jitterMs ?? 0.2} ms</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="40"
+                  step="0.5"
+                  value={selectedEdge.latency?.jitterMs ?? 0.2}
+                  onChange={(e) =>
+                    updateEdgeLatency(selectedEdge.id, {
+                      jitterMs: parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full accent-white cursor-pointer"
+                />
+              </div>
+
+              {/* Packet Loss */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-[var(--color-text-muted)]">Packet Loss:</span>
+                  <span className="text-white font-bold">
+                    {(((selectedEdge.latency?.packetLossPct ?? 0)) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.10"
+                  step="0.005"
+                  value={selectedEdge.latency?.packetLossPct ?? 0}
+                  onChange={(e) =>
+                    updateEdgeLatency(selectedEdge.id, {
+                      packetLossPct: parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full accent-white cursor-pointer"
+                />
+              </div>
+            </div>
           </div>
         ) : (
           /* System-Wide Capacity & Bottleneck Overview when no node is selected */
