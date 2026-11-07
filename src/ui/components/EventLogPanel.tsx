@@ -66,7 +66,7 @@ export const EventLogPanel: React.FC = () => {
 
   return (
     <div
-      className="absolute bottom-14 left-80 right-80 z-20 bg-[#111113]/95 backdrop-blur-md border-t border-x border-[#3f3f46] rounded-t-xl shadow-2xl flex flex-col h-64 select-none animate-in slide-in-from-bottom duration-200"
+      className="absolute bottom-2 left-6 right-6 z-20 bg-[#111113]/95 backdrop-blur-md border border-[#3f3f46] rounded-xl shadow-2xl flex flex-col h-64 select-none animate-in slide-in-from-bottom duration-200"
       aria-label="Simulation Event Log"
     >
       {/* Drawer Header */}

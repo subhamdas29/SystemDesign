@@ -8,6 +8,7 @@ import { ConfigForm } from './ConfigForm';
 import { LiveInspectorTab } from './LiveInspectorTab';
 import { ComponentType } from '@types';
 import { analyzeCapacity } from '../../engine/analysis/capacityAnalysis';
+import { formatRps, formatPercent } from '../../design/formatters';
 
 export const InspectorPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'config' | 'live'>('live');
@@ -18,6 +19,7 @@ export const InspectorPanel: React.FC = () => {
 
   const selectedNodeId = useUiStore(selectSelectedNodeId);
   const selectNode = useUiStore((s) => s.selectNode);
+  const toggleInspector = useUiStore((s) => s.toggleInspector);
 
   const storeCapacity = useSimulationStore(selectStaticCapacity);
   const runtimeBottleneck = useSimulationStore(selectRuntimeBottleneck);
@@ -59,7 +61,7 @@ export const InspectorPanel: React.FC = () => {
 
   return (
     <aside
-      className="w-80 h-full flex flex-col bg-[#131316] border-l border-[#27272a] select-none z-10"
+      className="w-full h-full flex flex-col bg-[#131316] border-l border-[#27272a] select-none z-10"
       aria-label="Component Inspector"
     >
       {/* Panel Header */}
@@ -68,15 +70,26 @@ export const InspectorPanel: React.FC = () => {
           <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Inspector</h2>
           <p className="text-xs text-[var(--color-text-muted)]">Configuration & Capacity</p>
         </div>
-        {selectedNode && (
+        <div className="flex items-center gap-2">
+          {selectedNode && (
+            <button
+              type="button"
+              onClick={() => selectNode(null)}
+              className="text-xs text-[var(--color-text-faint)] hover:text-white px-2 py-1 rounded hover:bg-[#1f1f23] transition-colors"
+            >
+              Clear
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => selectNode(null)}
-            className="text-xs text-[var(--color-text-faint)] hover:text-white px-2 py-1 rounded hover:bg-[#1f1f23] transition-colors"
+            onClick={toggleInspector}
+            title="Collapse Inspector"
+            aria-label="Collapse Inspector"
+            className="w-7 h-7 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white text-xs flex items-center justify-center transition-all shadow-sm"
           >
-            Clear
+            ▶
           </button>
-        )}
+        </div>
       </div>
 
       {/* Content Area */}
@@ -111,7 +124,7 @@ export const InspectorPanel: React.FC = () => {
                   <h3 className="text-sm font-bold text-white truncate">
                     {selectedNode.label || selectedNode.type}
                   </h3>
-                  <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-[var(--color-text-secondary)]">
+                  <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-[var(--color-text-secondary)] border border-white/20">
                     Slot {rule?.slot}
                   </span>
                 </div>
@@ -232,7 +245,7 @@ export const InspectorPanel: React.FC = () => {
                   System Capacity
                 </span>
                 <span className="text-xs font-mono font-bold text-white px-2 py-0.5 rounded bg-white/10 border border-white/20">
-                  ~{capacity.sustainableRps.toLocaleString()} RPS
+                  ~{formatRps(capacity.sustainableRps, false)}
                 </span>
               </div>
 
@@ -284,14 +297,14 @@ export const InspectorPanel: React.FC = () => {
                         {COMPONENT_RULES[comp.type]?.label ?? comp.type}
                       </div>
                       <div className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                        {comp.nodeId} • Share: {Math.round(comp.loadShare * 100)}%
+                        {comp.nodeId} • Share: {formatPercent(comp.loadShare, true)}
                       </div>
                     </div>
                     <div className="text-right font-mono">
                       <div className="text-white font-bold">
                         {comp.maxSustainableClientRps === Infinity
                           ? '∞'
-                          : `${Math.round(comp.maxSustainableClientRps).toLocaleString()} RPS`}
+                          : formatRps(comp.maxSustainableClientRps, false)}
                       </div>
                       <div className="text-[9px] text-[var(--color-text-faint)] truncate max-w-[100px]">
                         {comp.limitingFactor}

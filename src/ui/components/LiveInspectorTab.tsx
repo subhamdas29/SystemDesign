@@ -18,6 +18,7 @@ import {
 } from '../../store/simulationStore';
 import { deriveLiveMetrics } from '../inspector/liveViewModel';
 import { SimulationSnapshot } from '../../engine/protocol';
+import { formatNumber, formatLatency } from '../../design/formatters';
 
 interface LiveInspectorTabProps {
   node: GraphNode;
@@ -54,7 +55,7 @@ const Sparkline: React.FC<{
       <div className="flex items-center justify-between text-[10px]">
         <span className="text-[var(--color-text-muted)] uppercase tracking-wider">{label}</span>
         <span className="text-white font-bold">
-          {currentValue.toLocaleString()} {unit}
+          {formatNumber(currentValue)} {unit}
         </span>
       </div>
 
@@ -153,7 +154,7 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
         <div className="p-2 rounded bg-[#18181b] border border-[#27272a]">
           <div className="text-[10px] text-[var(--color-text-muted)]">Active Rate</div>
           <div className="text-sm font-bold text-white mt-0.5">
-            {metrics.currentRps.toLocaleString()} <span className="text-[10px] font-normal text-[#a1a1aa]">RPS</span>
+            {formatNumber(metrics.currentRps)} <span className="text-[10px] font-normal text-[#a1a1aa]">RPS</span>
           </div>
         </div>
 
@@ -173,7 +174,7 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
           </span>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
             <span className="text-[var(--color-text-muted)]">Processed:</span>
-            <span className="text-white font-bold">{metrics.appServer.processedRps.toLocaleString()} req/s</span>
+            <span className="text-white font-bold">{formatNumber(metrics.appServer.processedRps)} req/s</span>
           </div>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
             <span className="text-[var(--color-text-muted)]">Active In-Flight:</span>
@@ -262,12 +263,12 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
           </span>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
             <span className="text-[var(--color-text-muted)]">Query Rate:</span>
-            <span className="text-white font-bold">{metrics.database.queryRateQps.toLocaleString()} QPS</span>
+            <span className="text-white font-bold">{formatNumber(metrics.database.queryRateQps)} QPS</span>
           </div>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
             <span className="text-[var(--color-text-muted)]">Read / Write Split:</span>
             <span className="text-white">
-              {metrics.database.readRateQps} read / {metrics.database.writeRateQps} write
+              {formatNumber(metrics.database.readRateQps)} read / {formatNumber(metrics.database.writeRateQps)} write
             </span>
           </div>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
@@ -283,7 +284,7 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
           <div className="flex justify-between py-0.5">
             <span className="text-[var(--color-text-muted)]">Latency (Avg / P95):</span>
             <span className="text-white">
-              {metrics.database.avgLatencyMs}ms / {metrics.database.p95LatencyMs}ms
+              {formatLatency(metrics.database.avgLatencyMs)} / {formatLatency(metrics.database.p95LatencyMs)}
             </span>
           </div>
         </div>

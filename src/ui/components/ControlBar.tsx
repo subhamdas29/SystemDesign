@@ -22,6 +22,7 @@ import {
 } from '../../store/simulationStore';
 import { useGraphStore, selectGraph, selectValidation } from '../../store/graphStore';
 import { TrafficModal } from './TrafficModal';
+import { formatRps } from '../../design/formatters';
 
 export const ControlBar: React.FC = () => {
   const status = useSimulationStore(selectSimPlayStatus);
@@ -231,7 +232,7 @@ export const ControlBar: React.FC = () => {
             className="h-8 px-3 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5"
           >
             <span>⚡</span>
-            <span className="font-semibold">{rps.toLocaleString()} RPS</span>
+            <span className="font-semibold">{formatRps(rps, false)}</span>
             <span className="text-[10px] text-[var(--color-text-muted)] capitalize">
               ({trafficConfig.pattern})
             </span>

@@ -77,13 +77,20 @@ const CanvasInner: React.FC = () => {
     }));
   }, [rawEdges]);
 
-  // Fit view on load and whenever graph structure changes
+  // Fit view on load, whenever graph structure changes, and on window resize
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fitView({ padding: 0.25, duration: initialFitDone.current ? 400 : 0 });
+    const handleFit = () => {
+      fitView({ padding: 0.2, minZoom: 0.15, maxZoom: 1.2, duration: initialFitDone.current ? 300 : 0 });
       initialFitDone.current = true;
-    }, 50);
-    return () => clearTimeout(timer);
+    };
+
+    window.addEventListener('resize', handleFit);
+    const timer = setTimeout(handleFit, 60);
+
+    return () => {
+      window.removeEventListener('resize', handleFit);
+      clearTimeout(timer);
+    };
   }, [graph.version, fitView]);
 
   // Handle Drag Swap
@@ -142,7 +149,7 @@ const CanvasInner: React.FC = () => {
         onPaneClick={() => selectNode(null)}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
-        minZoom={0.4}
+        minZoom={0.15}
         maxZoom={1.8}
         proOptions={{ hideAttribution: true }}
       >

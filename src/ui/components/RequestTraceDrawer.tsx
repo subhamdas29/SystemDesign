@@ -40,7 +40,7 @@ export const RequestTraceDrawer: React.FC = () => {
 
   return (
     <div
-      className="absolute bottom-16 left-80 right-80 z-30 bg-[#111113]/95 backdrop-blur-md border border-[#3f3f46] rounded-t-2xl shadow-2xl flex flex-col max-h-96 select-none animate-in slide-in-from-bottom duration-200"
+      className="absolute bottom-2 left-6 right-6 z-30 bg-[#111113]/95 backdrop-blur-md border border-[#3f3f46] rounded-xl shadow-2xl flex flex-col max-h-96 select-none animate-in slide-in-from-bottom duration-200"
       role="region"
       aria-label="Request Trace Waterfall"
     >
