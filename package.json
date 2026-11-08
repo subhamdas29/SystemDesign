@@ -9,8 +9,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
+    "check:resources": "node scripts/check-resources.mjs",
     "test:qa": "node scripts/visual-qa.mjs",
-    "test:qa:phase7": "node scripts/visual-qa-phase7.mjs"
+    "test:qa:phase7": "node scripts/visual-qa-phase7.mjs",
+    "test:qa:phase8a": "node scripts/visual-qa-phase8a.mjs",
+    "test:qa:phase8b": "node scripts/visual-qa-phase8b.mjs",
+    "test:qa:phase10": "node scripts/visual-qa-phase10.mjs"
   },
   "repository": {
     "type": "git",

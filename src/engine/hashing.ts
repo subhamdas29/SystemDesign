@@ -5,6 +5,15 @@
 
 import { SimulationEvent } from '../types/runtime';
 
+export function computeHash(str: string): string {
+  let hash = 0x811c9dc5;
+  for (let j = 0; j < str.length; j++) {
+    hash ^= str.charCodeAt(j);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 export function hashEventStream(events: SimulationEvent[]): string {
   let hash = 0x811c9dc5; // FNV offset basis
 
@@ -15,7 +24,6 @@ export function hashEventStream(events: SimulationEvent[]): string {
 
     for (let j = 0; j < str.length; j++) {
       hash ^= str.charCodeAt(j);
-      // Math.imul for 32-bit integer multiplication with FNV prime 0x01000193
       hash = Math.imul(hash, 0x01000193);
     }
   }

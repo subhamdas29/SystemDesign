@@ -57,6 +57,11 @@ export const RunSummaryModal: React.FC = () => {
                 Simulation Run Summary
               </h2>
               <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5 flex items-center gap-2">
+                {summary.isAttackRun && (
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold uppercase">
+                    Attack Campaign: {summary.campaignName || 'Active Campaign'}
+                  </span>
+                )}
                 <span>Hash: {runResult.configHash}</span>
                 <span>•</span>
                 <span>Seed: {runResult.seed}</span>
@@ -89,30 +94,250 @@ export const RunSummaryModal: React.FC = () => {
           {/* Key Outcome Banner */}
           <div
             className={`p-4 rounded-xl border flex items-center justify-between ${
-              summary.successRatePercent >= 99
+              (summary.isAttackRun ? (summary.legitimateSuccessRate ?? summary.successRatePercent) : summary.successRatePercent) >= 99
                 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
-                : summary.successRatePercent >= 85
+                : (summary.isAttackRun ? (summary.legitimateSuccessRate ?? summary.successRatePercent) : summary.successRatePercent) >= 85
                 ? 'bg-amber-950/20 border-amber-500/30 text-amber-200'
                 : 'bg-rose-950/20 border-rose-500/30 text-rose-200'
             }`}
           >
             <div>
               <div className="text-xs font-bold uppercase tracking-wider">
-                Overall Result: {summary.successRatePercent}% Success Rate
+                {summary.isAttackRun
+                  ? `Legitimate Success Rate: ${summary.legitimateSuccessRate ?? summary.successRatePercent}%`
+                  : `Overall Result: ${summary.successRatePercent}% Success Rate`}
               </div>
               <div className="text-xs text-white/90 mt-1">
-                {summary.totalSucceeded.toLocaleString()} of {summary.totalRequests.toLocaleString()}{' '}
-                requests succeeded cleanly.
+                {summary.isAttackRun
+                  ? `${summary.totalSucceeded.toLocaleString()} requests succeeded while under ${summary.attackTrafficShare ?? 0}% malicious attack load.`
+                  : `${summary.totalSucceeded.toLocaleString()} of ${summary.totalRequests.toLocaleString()} requests succeeded cleanly.`}
               </div>
             </div>
 
             <div className="text-right">
-              <div className="text-2xl font-black text-white">{summary.successRatePercent}%</div>
+              <div className="text-2xl font-black text-white">
+                {summary.isAttackRun
+                  ? `${summary.legitimateSuccessRate ?? summary.successRatePercent}%`
+                  : `${summary.successRatePercent}%`}
+              </div>
               <div className="text-[10px] text-[var(--color-text-muted)] uppercase tracking-wider">
                 Handled {summary.peakRpsHandled.toLocaleString()} peak RPS
               </div>
             </div>
           </div>
+
+          {/* Security Impact & Attack Footprint (if Attack Run) */}
+          {summary.isAttackRun && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-amber-950/20 to-[#141417] border border-amber-500/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                  <span>🎯</span> Security Impact & Adversary Footprint
+                </h3>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/40 font-bold">
+                  {summary.attackTrafficShare ?? 0}% Malicious Share
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">Exposure Events</div>
+                  <div className={`text-base font-bold mt-0.5 ${(summary.exposureEvents ?? 0) > 0 ? 'text-red-400 font-black' : 'text-zinc-400'}`}>
+                    {summary.exposureEvents ?? 0}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">Compromised Servers</div>
+                  <div className={`text-base font-bold mt-0.5 ${(summary.compromisedServersCount ?? 0) > 0 ? 'text-red-400 font-black' : 'text-zinc-400'}`}>
+                    {summary.compromisedServersCount ?? 0}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">Data Exfiltrated</div>
+                  <div className={`text-base font-bold mt-0.5 ${(summary.dataEgressMb ?? 0) > 0 ? 'text-amber-300' : 'text-zinc-400'}`}>
+                    {summary.dataEgressMb ? `${summary.dataEgressMb} MB` : '0 MB'}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">First Failed Node</div>
+                  <div className="text-xs font-bold text-white mt-0.5 truncate" title={summary.firstFailedComponent?.reason}>
+                    {summary.firstFailedComponent ? summary.firstFailedComponent.nodeId : 'None'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Defense Effectiveness Report (Phase 8B) */}
+          {summary.defenseReport && summary.defenseReport.defenses.length > 0 && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-cyan-950/20 to-[#141417] border border-cyan-500/40 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-2">
+                  <span>🛡️</span> Defense Effectiveness Report
+                </h3>
+                {summary.defenseReport.previousRunDelta && (
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full border font-bold ${
+                      summary.defenseReport.previousRunDelta.legitSuccessRateDiff >= 0
+                        ? 'bg-emerald-500/20 text-emerald-200 border-emerald-500/40'
+                        : 'bg-rose-500/20 text-rose-200 border-rose-500/40'
+                    }`}
+                  >
+                    {summary.defenseReport.previousRunDelta.legitSuccessRateDiff >= 0 ? '+' : ''}
+                    {summary.defenseReport.previousRunDelta.legitSuccessRateDiff}% Legit Success vs Prev Run
+                  </span>
+                )}
+              </div>
+
+              {/* Defense KPI Cards */}
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">Malicious Blocked</div>
+                  <div className="text-base font-bold text-cyan-300 mt-0.5">
+                    {summary.defenseReport.totalMaliciousBlockedCount.toLocaleString()}{' '}
+                    <span className="text-[10px] font-normal text-cyan-400/80">
+                      ({summary.defenseReport.totalMaliciousBlockedPercent}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">False Positives (Legit Blocked)</div>
+                  <div
+                    className={`text-base font-bold mt-0.5 ${
+                      summary.defenseReport.totalFalsePositivesCount > 0 ? 'text-rose-400' : 'text-emerald-300'
+                    }`}
+                  >
+                    {summary.defenseReport.totalFalsePositivesCount.toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#0e0e11] border border-[#27272a]">
+                  <div className="text-[10px] text-[var(--color-text-muted)]">Autoscaling Cost</div>
+                  <div className="text-base font-bold text-amber-300 mt-0.5">
+                    ${summary.defenseReport.totalAutoscalingCostDollars.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-Defense Breakdown Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[11px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#27272a] text-[9px] uppercase tracking-wider text-[var(--color-text-muted)]">
+                      <th className="py-1.5 px-2">Defense</th>
+                      <th className="py-1.5 px-2">Blocked Malicious</th>
+                      <th className="py-1.5 px-2">False Positives</th>
+                      <th className="py-1.5 px-2">Verdict</th>
+                      <th className="py-1.5 px-2">Efficacy Assessment</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#202024]">
+                    {summary.defenseReport.defenses.map((d) => {
+                      const verdictBg =
+                        d.verdict === 'effective'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : d.verdict === 'partially-effective'
+                          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                          : d.verdict === 'bypassed'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : d.verdict === 'hurt-legitimate-users'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700';
+
+                      return (
+                        <tr key={d.defenseKey} className="hover:bg-white/[0.02]">
+                          <td className="py-2 px-2 font-bold text-white whitespace-nowrap">{d.label}</td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <span className="font-bold text-cyan-300">{d.blockedMaliciousCount.toLocaleString()}</span>
+                            {d.blockedMaliciousPercent > 0 && (
+                              <span className="text-[9px] text-[var(--color-text-muted)] ml-1">
+                                ({d.blockedMaliciousPercent}%)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <span className={d.blockedLegitimateCount > 0 ? 'text-rose-400 font-bold' : 'text-zinc-400'}>
+                              {d.blockedLegitimateCount.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border uppercase ${verdictBg}`}>
+                              {d.verdict.replace(/-/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-[10px] text-[var(--color-text-secondary)] leading-relaxed">
+                            {d.verdictReason}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Phase Timing Summaries */}
+              {summary.defenseReport.phaseTimingSummaries.length > 0 && (
+                <div className="pt-2 border-t border-[#27272a] space-y-1.5">
+                  <div className="text-[10px] uppercase font-bold text-[var(--color-text-muted)]">
+                    Phase Impact Breakdown (Legitimate Success Rate / P99 Latency)
+                  </div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {summary.defenseReport.phaseTimingSummaries.map((ph) => (
+                      <div
+                        key={ph.phaseId}
+                        className="p-2 rounded bg-[#0e0e11] border border-[#27272a] flex items-center justify-between text-[10px]"
+                      >
+                        <span className="font-bold text-white">{ph.name}</span>
+                        <div className="flex items-center gap-4 text-[var(--color-text-muted)] font-mono">
+                          <span>
+                            Before:{' '}
+                            <strong className="text-white">{ph.legitSuccessRateBefore}%</strong> (
+                            {ph.p99LatencyBeforeMs}ms)
+                          </span>
+                          <span>
+                            During:{' '}
+                            <strong
+                              className={ph.legitSuccessRateDuring < 80 ? 'text-rose-400' : 'text-amber-300'}
+                            >
+                              {ph.legitSuccessRateDuring}%
+                            </strong>{' '}
+                            ({ph.p99LatencyDuringMs}ms)
+                          </span>
+                          <span>
+                            After:{' '}
+                            <strong className="text-white">{ph.legitSuccessRateAfter}%</strong> (
+                            {ph.p99LatencyAfterMs}ms)
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Unmitigated Risks Alerts */}
+              {summary.defenseReport.unmitigatedRisks.length > 0 && (
+                <div className="pt-2 border-t border-[#27272a] space-y-1.5">
+                  <div className="text-[10px] uppercase font-bold text-amber-300 flex items-center gap-1">
+                    <span>⚠️</span> Unmitigated Risks & Architecture Gaps
+                  </div>
+                  <div className="space-y-1">
+                    {summary.defenseReport.unmitigatedRisks.map((risk, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2 rounded bg-amber-950/20 border border-amber-500/30 text-[10px] text-amber-200 leading-relaxed"
+                      >
+                        {risk}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Primary Metrics Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
@@ -262,6 +487,26 @@ export const RunSummaryModal: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {/* Defender Takeaways (if Attack Run) */}
+          {summary.isAttackRun && summary.defenderTakeaways && summary.defenderTakeaways.length > 0 && (
+            <div className="p-4 rounded-xl bg-[#141417] border border-amber-500/30 space-y-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                <span>🛡️</span> Key Defender Takeaways
+              </h3>
+              <div className="space-y-2">
+                {summary.defenderTakeaways.map((takeaway, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 rounded-lg bg-[#0e0e11] border border-amber-500/20 text-xs text-amber-100/90 leading-relaxed flex items-start gap-2"
+                  >
+                    <span className="text-amber-400 font-bold shrink-0">✓</span>
+                    <span>{takeaway}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

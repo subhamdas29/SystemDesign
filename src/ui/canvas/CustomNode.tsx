@@ -34,8 +34,19 @@ function getNodeSummaryBadge(type: ComponentType, config: unknown): string {
       return `${c.maxThroughputRps ?? 1000} rps`;
     case 'cache':
       return `${c.hitRatio ?? 85}% hit`;
-    case 'database':
+    case 'database': {
+      const dbCfg = c as Record<string, unknown>;
+      if (dbCfg.shardCount && Number(dbCfg.shardCount) > 1) {
+        return `${dbCfg.shardCount} Shards (${dbCfg.shardKeyDistribution === 'zipf-skewed' ? 'Zipf' : 'Uni'})`;
+      }
       return `${c.maxQueryThroughputQps ?? 500} qps`;
+    }
+    case 'database-replica':
+      return `${c.capacityQps ?? 800} qps (replica)`;
+    case 'message-queue':
+      return `${c.capacityRps ? Number(c.capacityRps).toLocaleString() : '25k'} rps`;
+    case 'worker':
+      return `${c.instances ?? 2}x (${(Number(c.instances ?? 2)) * Number(c.concurrency ?? 5)} conns)`;
     case 'api-gateway':
       return `${c.capacityRps ? Number(c.capacityRps).toLocaleString() : '30k'} rps`;
     default:
@@ -74,6 +85,13 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
   const queueDepth = runtimeState?.queueDepth ?? 0;
   const utilization = runtimeState?.utilization ?? 0;
   const healthStatus = runtimeState?.status ?? 'healthy';
+  const isThreatSource = (nodeData.type as string) === 'threat-source' || id === 'threat-source';
+  const isCompromised = runtimeState?.isCompromised ?? false;
+  const isQuarantined = runtimeState?.isQuarantined ?? false;
+  const circuitBreakerState = runtimeState?.circuitBreakerState ?? 'closed';
+  const activeInstances = runtimeState?.activeInstances ?? 1;
+  const pendingInstances = runtimeState?.pendingInstances ?? 0;
+  const wafRulesCount = runtimeState?.wafActiveRulesetsCount;
 
   // Swap drag states
   const isBeingDragged = draggingSwapNodeId === id;
@@ -102,7 +120,15 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
           bg-gradient-to-b from-[#18181c] to-[#111113]
           border
           ${
-            isBottleneck
+            isThreatSource
+              ? 'border-dashed border-amber-500/80 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+              : isQuarantined
+              ? 'border-dashed border-amber-500/90 bg-amber-950/30 opacity-70 animate-pulse'
+              : isCompromised
+              ? 'border-red-500/90 shadow-[0_0_18px_rgba(239,68,68,0.7)] ring-2 ring-red-500/70 animate-pulse'
+              : circuitBreakerState === 'open'
+              ? 'border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.6)] ring-2 ring-rose-500'
+              : isBottleneck
               ? 'border-white shadow-[0_0_20px_rgba(255,255,255,0.85)] ring-2 ring-white scale-105'
               : isPathHighlighted
               ? 'border-white shadow-[0_0_20px_rgba(255,255,255,0.7)] scale-105 ring-2 ring-white'
@@ -120,13 +146,33 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
           ${isDimmed ? 'opacity-30' : 'opacity-100'}
         `}
       >
-        {nodeFailure && (
+        {isQuarantined && (
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-amber-950 text-amber-300 border border-amber-500/80 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(245,158,11,0.6)] z-10 animate-pulse">
+            QUARANTINED
+          </div>
+        )}
+        {isCompromised && !isQuarantined && (
+          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-red-950 text-red-300 border border-red-500/60 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(239,68,68,0.6)] z-10 animate-pulse">
+            COMPROMISED
+          </div>
+        )}
+        {circuitBreakerState === 'open' && (
+          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-rose-950 text-rose-300 border border-rose-500 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(244,63,94,0.6)] z-10 animate-pulse">
+            CB: OPEN
+          </div>
+        )}
+        {circuitBreakerState === 'half-open' && (
+          <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-amber-950 text-amber-300 border border-amber-500 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(245,158,11,0.6)] z-10">
+            CB: HALF-OPEN
+          </div>
+        )}
+        {nodeFailure && !isCompromised && !isQuarantined && (
           <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-red-950 text-red-300 border border-red-500/60 px-1.5 py-0.2 rounded-full text-[8px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(239,68,68,0.6)] z-10">
             FAIL
           </div>
         )}
 
-        {rule?.slot !== 1 && (
+        {rule?.slot !== 1 && !isThreatSource && (
           <Handle
             type="target"
             position={Position.Left}
@@ -144,8 +190,18 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-bold text-white tracking-wide truncate">
-            {nodeData.label || nodeData.type}
+          <div className="text-xs font-bold text-white tracking-wide truncate flex items-center gap-1">
+            <span>{nodeData.label || nodeData.type}</span>
+            {nodeData.type === 'database-replica' && (
+              <span className="text-[8px] px-1 py-0.1 bg-zinc-800 text-zinc-300 rounded font-mono">
+                REP
+              </span>
+            )}
+            {nodeData.type === 'database' && Number((nodeData.config as Record<string, unknown>)?.shardCount ?? 1) > 1 && (
+              <span className="text-[8px] px-1 py-0.1 bg-zinc-800 text-zinc-300 rounded font-mono">
+                ⛁{String((nodeData.config as Record<string, unknown>)?.shardCount)}S
+              </span>
+            )}
           </div>
           <div className="text-[10px] font-mono text-[var(--color-text-muted)] flex items-center gap-1.5">
             <span
@@ -193,7 +249,15 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         bg-gradient-to-b from-[#18181c] to-[#111113]
         border
         ${
-          isBottleneck
+          isThreatSource
+            ? 'border-dashed border-amber-500/80 shadow-[0_0_20px_rgba(245,158,11,0.35)]'
+            : isQuarantined
+            ? 'border-dashed border-amber-500/90 bg-amber-950/20 opacity-70 animate-pulse'
+            : isCompromised
+            ? 'border-red-500 shadow-[0_0_25px_rgba(239,68,68,0.7)] ring-2 ring-red-500 animate-pulse'
+            : circuitBreakerState === 'open'
+            ? 'border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.6)] ring-2 ring-rose-500'
+            : isBottleneck
             ? 'border-white shadow-[0_0_25px_rgba(255,255,255,0.85)] ring-2 ring-white scale-105'
             : isPathHighlighted
             ? 'border-white shadow-[0_0_25px_rgba(255,255,255,0.7)] scale-105 ring-2 ring-white'
@@ -207,21 +271,56 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
             ? 'border-white shadow-[0_0_15px_rgba(255,255,255,0.4)] ring-2 ring-white/60'
             : utilization > 0.85
             ? 'border-[#e4e4e7] ring-1 ring-white/30'
+            : nodeData.type === 'database-replica'
+            ? 'opacity-85 border-zinc-600/80 hover:border-zinc-400'
             : 'border-[var(--color-border-silver-light)] hover:border-white hover:shadow-[var(--shadow-glow-hover)]'
         }
         ${isBeingDragged ? 'opacity-70 scale-95' : ''}
         ${isDimmed ? 'opacity-30' : 'opacity-100'}
       `}
     >
+      {/* Quarantined Badge Callout */}
+      {isQuarantined && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-950 text-amber-200 border border-amber-500 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_12px_rgba(245,158,11,0.7)] animate-pulse z-10">
+          QUARANTINED
+        </div>
+      )}
+
+      {/* Compromised Badge Callout */}
+      {isCompromised && !isQuarantined && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-950 text-red-200 border border-red-500 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_12px_rgba(239,68,68,0.7)] animate-pulse z-10">
+          COMPROMISED
+        </div>
+      )}
+
+      {/* Circuit Breaker Callout */}
+      {circuitBreakerState === 'open' && (
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-rose-950 text-rose-200 border border-rose-500 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_10px_rgba(244,63,94,0.7)] animate-pulse z-10">
+          CB: OPEN
+        </div>
+      )}
+      {circuitBreakerState === 'half-open' && (
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-amber-950 text-amber-200 border border-amber-500 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.7)] z-10">
+          CB: HALF-OPEN
+        </div>
+      )}
+
+      {/* Threat Source Callout */}
+      {isThreatSource && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-950 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_10px_rgba(245,158,11,0.5)] z-10">
+          ATTACK SOURCE
+        </div>
+      )}
+
       {/* Bottleneck Badge Callout */}
-      {isBottleneck && (
+      {isBottleneck && !isCompromised && !isQuarantined && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white text-black px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_12px_rgba(255,255,255,0.9)] animate-pulse border border-white z-10">
           BOTTLENECK
         </div>
       )}
 
       {/* Failure Badge Callout */}
-      {nodeFailure && !isBottleneck && (
+      {nodeFailure && !isBottleneck && !isCompromised && !isQuarantined && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-950 text-red-300 border border-red-500/60 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold tracking-wider shadow-[0_0_10px_rgba(239,68,68,0.5)] z-10">
           {nodeFailure.failureType.toUpperCase()}
         </div>
@@ -254,7 +353,7 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
       )}
 
       {/* Input Handle (Left) */}
-      {rule?.slot !== 1 && (
+      {rule?.slot !== 1 && !isThreatSource && (
         <Handle
           type="target"
           position={Position.Left}
@@ -267,7 +366,9 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         <div className="flex items-center gap-1.5">
           <span
             className={`w-2 h-2 rounded-full ${
-              healthStatus === 'failed'
+              isThreatSource
+                ? 'bg-amber-400 shadow-[0_0_8px_#f59e0b]'
+                : healthStatus === 'failed'
                 ? 'bg-[#71717a]'
                 : isBottleneck || healthStatus === 'overloaded'
                 ? 'bg-white shadow-[0_0_8px_#ffffff] ring-1 ring-white'
@@ -278,17 +379,53 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
             title={`Health: ${healthStatus} (Util: ${Math.round(utilization * 100)}%)`}
           />
           <span className="text-[10px] uppercase tracking-wider font-mono text-[var(--color-text-faint)]">
-            Slot {rule?.slot ?? '-'}
+            {isThreatSource ? 'ATTACK' : `Slot ${rule?.slot ?? '-'}`}
           </span>
         </div>
 
         <div className="flex items-center gap-1">
+          {nodeData.type === 'app-server' && activeInstances > 1 && (
+            <span
+              className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/50 font-mono font-bold shadow-sm"
+              title={`Active autoscaled instances: ${activeInstances}${pendingInstances > 0 ? ` (+${pendingInstances} scaling)` : ''}`}
+            >
+              x{activeInstances}{pendingInstances > 0 ? `+${pendingInstances}` : ''}
+            </span>
+          )}
+
+          {nodeData.type === 'waf' && wafRulesCount !== undefined && wafRulesCount > 0 && (
+            <span
+              className="text-[9px] px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-500/50 font-mono font-bold shadow-sm"
+              title={`${wafRulesCount} active WAF rulesets`}
+            >
+              {wafRulesCount}R
+            </span>
+          )}
+
           {queueDepth > 0 && (
             <span
               className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 text-white font-mono font-bold shadow-sm"
               title={`Queue depth: ${queueDepth}`}
             >
               Q:{queueDepth}
+            </span>
+          )}
+
+          {nodeData.type === 'database-replica' && (
+            <span
+              className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300 border border-zinc-600 font-mono font-bold shadow-sm"
+              title="Read Replica: serves read queries offloaded from cache misses"
+            >
+              REPLICA
+            </span>
+          )}
+
+          {nodeData.type === 'database' && Number((nodeData.config as Record<string, unknown>)?.shardCount ?? 1) > 1 && (
+            <span
+              className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-200 border border-zinc-600 font-mono font-bold shadow-sm"
+              title={`Sharded Database: ${(nodeData.config as Record<string, unknown>)?.shardCount} shards (${String((nodeData.config as Record<string, unknown>)?.shardKeyDistribution ?? 'uniform')})`}
+            >
+              ⛁ {String((nodeData.config as Record<string, unknown>)?.shardCount)} Shards
             </span>
           )}
 

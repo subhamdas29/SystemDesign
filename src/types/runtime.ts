@@ -22,6 +22,18 @@ export interface NodeRuntimeState {
   amplificationFactor?: number;
   orphanedWorkCount?: number;
   healthCheckState?: 'healthy' | 'probing' | 'unhealthy';
+  attackTrafficShare?: number; // 0 to 1.0 (share of inflow that is malicious)
+  legitimateInflowRps?: number;
+  maliciousInflowRps?: number;
+  isCompromised?: boolean;
+  isQuarantined?: boolean;
+  circuitBreakerState?: 'closed' | 'open' | 'half-open';
+  activeInstances?: number;
+  pendingInstances?: number;
+  wafActiveRulesetsCount?: number;
+  blockedMaliciousRps?: number;
+  blockedLegitimateRps?: number; // False positives
+  passedRps?: number;
 }
 
 export type SimulationEventType =
@@ -39,6 +51,7 @@ export type SimulationEventType =
   | 'REQUEST_FAILED'
   | 'REQUEST_TIMED_OUT'
   | 'REQUEST_RETRIED'
+  | 'REQUEST_BLOCKED'
   | 'PACKET_LOST'
   | 'ORPHANED_WORK_DISCARDED'
   | 'LATE_RESPONSE_DISCARDED'
@@ -46,7 +59,27 @@ export type SimulationEventType =
   | 'FAILURE_REMOVED'
   | 'HEALTH_CHECK_FAILED'
   | 'HEALTH_CHECK_RECOVERED'
-  | 'RESPONSE_RECEIVED';
+  | 'RESPONSE_RECEIVED'
+  | 'ATTACK_PHASE_STARTED'
+  | 'ATTACK_PHASE_ENDED'
+  | 'EXPOSURE_EVENT'
+  | 'SERVER_COMPROMISED'
+  | 'DATA_EXFILTRATED'
+  | 'CIRCUIT_OPENED'
+  | 'CIRCUIT_HALF_OPEN'
+  | 'CIRCUIT_CLOSED'
+  | 'SCALE_OUT_REQUESTED'
+  | 'SCALE_OUT_COMPLETED'
+  | 'SCALE_IN'
+  | 'SERVER_QUARANTINED'
+  | 'SERVER_RESTORED'
+  | 'ASYNC_JOB_ENQUEUED'
+  | 'ASYNC_JOB_PROCESSED'
+  | 'ASYNC_JOB_DROPPED'
+  | 'ASYNC_JOB_DEAD_LETTERED'
+  | 'STALE_READ_SERVED'
+  | 'FAILOVER_PROMOTED'
+  | 'HOT_SHARD_SATURATED';
 
 export interface SimulationEvent {
   id: string;

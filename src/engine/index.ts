@@ -28,3 +28,4 @@ export * from './components/loadBalancerModel';
 export * from './components/appServerModel';
 export * from './components/cacheModel';
 export * from './components/databaseModel';
+export * from './worker/engineClient';

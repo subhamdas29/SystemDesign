@@ -4,7 +4,15 @@
  * Strictly decoupled from React rendering loop.
  */
 
-import { GraphNode, AppServerConfig, LoadBalancerConfig, CacheConfig, DatabaseConfig } from '../../types';
+import type {
+  GraphNode,
+  AppServerConfig,
+  LoadBalancerConfig,
+  CacheConfig,
+  DatabaseConfig,
+  MessageQueueConfig,
+  WorkerConfig,
+} from '../../types';
 import { SimulationSnapshot } from '../../engine/protocol';
 import { NodeLiveMetrics, MetricSparklinePoint, BackendShareInfo } from './types';
 import { COMPONENT_RULES } from '../../builder/rules/slotRules';
@@ -157,6 +165,14 @@ export function deriveLiveMetrics(
     const poolSize = cfg.connectionPoolSize ?? 100;
     const queryRate = currentRps;
 
+    const shardLoads = snapshot.counters.shardLoads ?? [queryRate];
+    const totShard = shardLoads.reduce((a, b) => a + b, 0);
+    const perShardLoad = shardLoads.map((count, idx) => ({
+      shardIndex: idx + 1,
+      queryCount: Math.round(count),
+      loadPercent: totShard > 0 ? Math.round((count / totShard) * 100) : Math.round(100 / shardLoads.length),
+    }));
+
     result.database = {
       queryRateQps: queryRate,
       readRateQps: Math.round(queryRate * 0.8),
@@ -166,6 +182,10 @@ export function deriveLiveMetrics(
       waitingQueries: queueDepth,
       avgLatencyMs: snapshot.latencySummary.averageMs,
       p95LatencyMs: snapshot.latencySummary.p95Ms,
+      perShardLoad,
+      primaryReadSharePercent: 10,
+      replicaReadSharePercent: 90,
+      failoverState: snapshot.counters.failoverState ?? 'normal',
     };
 
     result.sparkline1 = {
@@ -179,6 +199,73 @@ export function deriveLiveMetrics(
       points: sparklineHistory2,
       currentValue: queueDepth,
       unit: 'waiting',
+    };
+  } else if (type === 'message-queue') {
+    const mqCfg = node.config as MessageQueueConfig;
+    result.messageQueue = {
+      queueDepth: snapshot.counters.queueDepth ?? queueDepth,
+      maxQueueDepth: mqCfg.maxQueueDepth ?? 50000,
+      oldestAgeMs: snapshot.counters.oldestJobAgeMs ?? 0,
+      enqueueRateRps: currentRps,
+      drainRateRps: Math.round((snapshot.counters.asyncJobsProcessed ?? 0) / Math.max(1, snapshot.timeMs / 1000)),
+      droppedJobs: snapshot.counters.asyncJobsDropped ?? 0,
+      overflowBehavior: mqCfg.overflowBehavior ?? 'reject',
+    };
+    result.sparkline1 = {
+      label: 'Queue Depth',
+      points: sparklineHistory1,
+      currentValue: snapshot.counters.queueDepth ?? queueDepth,
+      unit: 'jobs',
+    };
+    result.sparkline2 = {
+      label: 'Lag',
+      points: sparklineHistory2,
+      currentValue: snapshot.counters.consumerLagMs ?? 0,
+      unit: 'ms',
+    };
+  } else if (type === 'worker') {
+    const wCfg = node.config as WorkerConfig;
+    result.worker = {
+      instances: wCfg.instances ?? 2,
+      concurrency: wCfg.concurrency ?? 5,
+      activeJobs: nodeState?.activeConnections ?? 0,
+      processedJobs: snapshot.counters.asyncJobsProcessed ?? 0,
+      retriesCount: 0,
+      deadLetterCount: snapshot.counters.asyncJobsDeadLettered ?? 0,
+    };
+    result.sparkline1 = {
+      label: 'Active Jobs',
+      points: sparklineHistory1,
+      currentValue: nodeState?.activeConnections ?? 0,
+      unit: 'jobs',
+    };
+    result.sparkline2 = {
+      label: 'Processed',
+      points: sparklineHistory2,
+      currentValue: snapshot.counters.asyncJobsProcessed ?? 0,
+      unit: 'total',
+    };
+  } else if (type === 'database-replica') {
+    const thresh = 1000;
+    const repLag = snapshot.counters.replicationLagMs ?? 5;
+    result.databaseReplica = {
+      queryRateQps: currentRps,
+      replicationLagMs: repLag,
+      stalenessThresholdMs: thresh,
+      staleReadRate: snapshot.counters.staleReadRate ?? 0,
+      isStale: repLag > thresh,
+    };
+    result.sparkline1 = {
+      label: 'Query Rate',
+      points: sparklineHistory1,
+      currentValue: currentRps,
+      unit: 'QPS',
+    };
+    result.sparkline2 = {
+      label: 'Replication Lag',
+      points: sparklineHistory2,
+      currentValue: repLag,
+      unit: 'ms',
     };
   } else {
     result.generic = {

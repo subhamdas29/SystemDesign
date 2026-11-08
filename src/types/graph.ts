@@ -32,7 +32,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  kind: 'request' | 'replication';
+  kind: 'request' | 'async' | 'replication';
   isLookup?: boolean;
   latency?: EdgeLatencyConfig;
 }

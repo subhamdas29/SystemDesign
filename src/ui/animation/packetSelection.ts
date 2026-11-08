@@ -22,6 +22,7 @@ export interface AnimatedPacket {
   state: PacketVisualState;
   isTracked: boolean;
   isSampled?: boolean;
+  isAsyncJob?: boolean;
   queueIndex?: number;
   timestamp: number;
 }

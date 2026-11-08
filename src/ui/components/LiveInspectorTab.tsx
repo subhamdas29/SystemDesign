@@ -19,6 +19,7 @@ import {
 import { deriveLiveMetrics } from '../inspector/liveViewModel';
 import { SimulationSnapshot } from '../../engine/protocol';
 import { formatNumber, formatLatency } from '../../design/formatters';
+import { GlossaryTerm } from '../../glossary/GlossaryTerm';
 
 interface LiveInspectorTabProps {
   node: GraphNode;
@@ -119,7 +120,7 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
         <div className="p-2.5 bg-white/10 border border-white rounded-xl shadow-[0_0_12px_rgba(255,255,255,0.2)]">
           <div className="flex items-center gap-1.5 font-bold text-white text-[11px]">
             <span>⚠️</span>
-            <span>IDENTIFIED BOTTLENECK</span>
+            <GlossaryTerm id="bottleneck">IDENTIFIED BOTTLENECK</GlossaryTerm>
           </div>
           <p className="text-[11px] text-[var(--color-text-secondary)] mt-1">
             {staticCapacity?.explanation}
@@ -153,7 +154,9 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
       {/* Primary Metrics Grid */}
       <div className="grid grid-cols-2 gap-2 font-mono">
         <div className="p-2 rounded bg-[#18181b] border border-[#27272a]">
-          <div className="text-[10px] text-[var(--color-text-muted)]">Active Rate</div>
+          <div className="text-[10px] text-[var(--color-text-muted)]">
+            <GlossaryTerm id="rps">Active Rate</GlossaryTerm>
+          </div>
           <div className="text-sm font-bold text-white mt-0.5">
             {formatNumber(metrics.currentRps)} <span className="text-[10px] font-normal text-[#a1a1aa]">RPS</span>
           </div>
@@ -267,7 +270,9 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
             In-Memory Cache Metrics
           </span>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
-            <span className="text-[var(--color-text-muted)]">Observed Hit Ratio:</span>
+            <span className="text-[var(--color-text-muted)]">
+              <GlossaryTerm id="cache_hit">Observed Hit Ratio</GlossaryTerm>:
+            </span>
             <span className="text-white font-bold">{metrics.cache.observedHitRatio}%</span>
           </div>
           <div className="flex justify-between py-0.5 border-b border-[#222226]">
@@ -314,10 +319,151 @@ export const LiveInspectorTab: React.FC<LiveInspectorTabProps> = ({ node }) => {
             <span className="text-[var(--color-text-muted)]">Waiting Queries:</span>
             <span className="text-white font-bold">{metrics.database.waitingQueries}</span>
           </div>
-          <div className="flex justify-between py-0.5">
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
             <span className="text-[var(--color-text-muted)]">Latency (Avg / P95):</span>
             <span className="text-white">
               {formatLatency(metrics.database.avgLatencyMs)} / {formatLatency(metrics.database.p95LatencyMs)}
+            </span>
+          </div>
+          {metrics.database.failoverState && metrics.database.failoverState !== 'normal' && (
+            <div className="flex justify-between py-0.5 border-b border-[#222226]">
+              <span className="text-amber-400 font-bold">Failover State:</span>
+              <span className="text-amber-300 font-bold uppercase">{metrics.database.failoverState}</span>
+            </div>
+          )}
+          {metrics.database.perShardLoad && metrics.database.perShardLoad.length > 1 && (
+            <div className="space-y-1 pt-1 border-t border-[#222226]">
+              <span className="text-[10px] uppercase text-[var(--color-text-muted)] block">Per-Shard Load:</span>
+              {metrics.database.perShardLoad.map((s) => (
+                <div key={s.shardIndex} className="space-y-0.5">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-white">Shard {s.shardIndex}</span>
+                    <span className="text-[var(--color-text-muted)]">{s.loadPercent}% ({s.queryCount} qps)</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[#222226] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${s.loadPercent > 60 ? 'bg-amber-400' : 'bg-white'}`}
+                      style={{ width: `${s.loadPercent}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {metrics.apiGateway && (
+        <div className="space-y-2 p-3 bg-[#18181b] rounded-lg border border-[#27272a] font-mono text-[11px]">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
+            API Gateway Telemetry
+          </span>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Inflow / Passed:</span>
+            <span className="text-white font-bold">
+              {formatNumber(metrics.apiGateway.incomingRps)} / {formatNumber(metrics.apiGateway.passedRps)} req/s
+            </span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Auth Cache Hits:</span>
+            <span className="text-emerald-400 font-bold">{metrics.apiGateway.authCacheHits}</span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Auth 401 Rejections:</span>
+            <span className="text-amber-300 font-bold">{metrics.apiGateway.auth401Count}</span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Rate Limit 429 Rejections:</span>
+            <span className="text-amber-400 font-bold">{metrics.apiGateway.rateLimit429Count}</span>
+          </div>
+          <div className="flex justify-between py-0.5">
+            <span className="text-[var(--color-text-muted)]">Edge Response Cache Hits:</span>
+            <span className="text-white font-bold">{metrics.apiGateway.responseCacheHits}</span>
+          </div>
+        </div>
+      )}
+
+      {metrics.messageQueue && (
+        <div className="space-y-2 p-3 bg-[#18181b] rounded-lg border border-[#27272a] font-mono text-[11px]">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
+            Message Queue Telemetry
+          </span>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Queue Depth:</span>
+            <span className="text-white font-bold">
+              {formatNumber(metrics.messageQueue.queueDepth)} / {formatNumber(metrics.messageQueue.maxQueueDepth)}
+            </span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Oldest Message Age:</span>
+            <span className="text-white font-bold">{formatLatency(metrics.messageQueue.oldestAgeMs)}</span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Enqueue / Drain Rate:</span>
+            <span className="text-white">
+              {formatNumber(metrics.messageQueue.enqueueRateRps)} / {formatNumber(metrics.messageQueue.drainRateRps)} jobs/s
+            </span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Dropped (Data Loss):</span>
+            <span className="text-amber-400 font-bold">{metrics.messageQueue.droppedJobs}</span>
+          </div>
+          <div className="flex justify-between py-0.5">
+            <span className="text-[var(--color-text-muted)]">Overflow Policy:</span>
+            <span className="text-white uppercase">{metrics.messageQueue.overflowBehavior}</span>
+          </div>
+        </div>
+      )}
+
+      {metrics.worker && (
+        <div className="space-y-2 p-3 bg-[#18181b] rounded-lg border border-[#27272a] font-mono text-[11px]">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
+            Async Worker Pool
+          </span>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Cluster Capacity:</span>
+            <span className="text-white font-bold">
+              {metrics.worker.instances} instances × {metrics.worker.concurrency} concurrent
+            </span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Active Jobs:</span>
+            <span className="text-white font-bold">{metrics.worker.activeJobs} jobs</span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Processed Jobs:</span>
+            <span className="text-emerald-400 font-bold">{formatNumber(metrics.worker.processedJobs)}</span>
+          </div>
+          <div className="flex justify-between py-0.5">
+            <span className="text-[var(--color-text-muted)]">Dead-Letter Count:</span>
+            <span className="text-white">{metrics.worker.deadLetterCount}</span>
+          </div>
+        </div>
+      )}
+
+      {metrics.databaseReplica && (
+        <div className="space-y-2 p-3 bg-[#18181b] rounded-lg border border-[#27272a] font-mono text-[11px]">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
+            Read Replica Telemetry
+          </span>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Query Rate:</span>
+            <span className="text-white font-bold">{formatNumber(metrics.databaseReplica.queryRateQps)} QPS</span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Replication Lag:</span>
+            <span className={`font-bold ${metrics.databaseReplica.isStale ? 'text-amber-400' : 'text-white'}`}>
+              {formatLatency(metrics.databaseReplica.replicationLagMs)}
+            </span>
+          </div>
+          <div className="flex justify-between py-0.5 border-b border-[#222226]">
+            <span className="text-[var(--color-text-muted)]">Staleness Threshold:</span>
+            <span className="text-white">{formatLatency(metrics.databaseReplica.stalenessThresholdMs)}</span>
+          </div>
+          <div className="flex justify-between py-0.5">
+            <span className="text-[var(--color-text-muted)]">Stale Read Rate:</span>
+            <span className={`font-bold ${metrics.databaseReplica.staleReadRate > 0 ? 'text-amber-300' : 'text-white'}`}>
+              {formatNumber(metrics.databaseReplica.staleReadRate)} reads/s
             </span>
           </div>
         </div>

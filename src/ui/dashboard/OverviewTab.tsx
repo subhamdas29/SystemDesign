@@ -92,6 +92,61 @@ export const OverviewTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Attacker Mode Telemetry & Impact Card */}
+      {((system?.attackTrafficShare ?? 0) > 0 || (system?.maliciousIncomingRps ?? 0) > 0) && (
+        <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-950/20 to-[#141417] border border-amber-500/40 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-amber-400">🎯</span>
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Security Impact & Malicious Traffic
+              </span>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 font-bold">
+              {system?.attackTrafficShare ?? 0}% Attack Load
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div className="p-2 rounded-lg bg-[#111113] border border-[#27272a]">
+              <div className="text-[10px] text-[var(--color-text-muted)]">Legit Success Rate</div>
+              <div
+                className={`text-base font-bold mt-0.5 ${
+                  (system?.legitimateSuccessRate ?? 100) >= 95
+                    ? 'text-emerald-400'
+                    : (system?.legitimateSuccessRate ?? 100) >= 80
+                    ? 'text-amber-300'
+                    : 'text-red-400'
+                }`}
+              >
+                {system?.legitimateSuccessRate ?? 100}%
+              </div>
+            </div>
+
+            <div className="p-2 rounded-lg bg-[#111113] border border-[#27272a]">
+              <div className="text-[10px] text-[var(--color-text-muted)]">Malicious Inflow</div>
+              <div className="text-base font-bold text-amber-400 mt-0.5">
+                {(system?.maliciousIncomingRps ?? 0).toLocaleString()} <span className="text-[10px] font-normal text-[var(--color-text-faint)]">RPS</span>
+              </div>
+            </div>
+
+            <div className="p-2 rounded-lg bg-[#111113] border border-[#27272a]">
+              <div className="text-[10px] text-[var(--color-text-muted)]">Exposure Events</div>
+              <div className={`text-base font-bold mt-0.5 ${(system?.exposureEventsCount ?? 0) > 0 ? 'text-red-400 animate-pulse' : 'text-zinc-400'}`}>
+                {system?.exposureEventsCount ?? 0}
+              </div>
+            </div>
+
+            <div className="p-2 rounded-lg bg-[#111113] border border-[#27272a]">
+              <div className="text-[10px] text-[var(--color-text-muted)]">Data Exfiltrated</div>
+              <div className={`text-base font-bold mt-0.5 ${(system?.dataEgressMb ?? 0) > 0 ? 'text-amber-300' : 'text-zinc-400'}`}>
+                {system?.dataEgressMb ? `${system.dataEgressMb.toFixed(1)} MB` : '0 MB'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Primary Metrics Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
         {/* Incoming Traffic */}

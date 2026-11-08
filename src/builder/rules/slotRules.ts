@@ -230,13 +230,53 @@ export const COMPONENT_RULES: Record<ComponentType, ComponentSlotRule> = {
     requires: [
       {
         type: 'app-server',
-        reason: 'A message queue requires an App Server to produce and consume messages.',
+        reason: 'A message queue requires an App Server to enqueue background tasks.',
+      },
+      {
+        type: 'database',
+        reason: 'A message queue requires a Database for background workers to persist jobs.',
       },
     ],
     removable: true,
     pathBehavior: 'forward',
-    enabledInRelease: 'later',
-    whyHere: 'Decouples slow background tasks and asynchronous events from immediate HTTP requests.',
+    enabledInRelease: 'v1',
+    whyHere: 'Buffers asynchronous write traffic and decouples long-running background tasks from immediate user request latency.',
+  },
+  worker: {
+    type: 'worker',
+    label: 'Async Worker',
+    slot: 10,
+    maxCount: 10,
+    minCount: 0,
+    fanOut: true,
+    requires: [
+      {
+        type: 'message-queue',
+        reason: 'Async workers require a Message Queue to pull background jobs from.',
+      },
+    ],
+    removable: true,
+    pathBehavior: 'forward',
+    enabledInRelease: 'v1',
+    whyHere: 'Pulls background tasks asynchronously from the queue and commits completed jobs to the database.',
+  },
+  'database-replica': {
+    type: 'database-replica',
+    label: 'Read Replica',
+    slot: 11,
+    maxCount: 5,
+    minCount: 0,
+    fanOut: true,
+    requires: [
+      {
+        type: 'database',
+        reason: 'A read replica requires a Primary Database to replicate data from.',
+      },
+    ],
+    removable: true,
+    pathBehavior: 'forward',
+    enabledInRelease: 'v1',
+    whyHere: 'Replicates data from the primary database to serve read-only queries with horizontal scale.',
   },
 };
 

@@ -29,6 +29,8 @@ export const InventoryPanel: React.FC = () => {
       (type) => COMPONENT_RULES[type].enabledInRelease === 'v1'
     );
 
+    const asyncScalingTypes: ComponentType[] = ['message-queue', 'worker', 'database-replica'];
+
     const sections: TierSection[] = [
       {
         title: 'Edge & Routing (Tiers 2-4)',
@@ -44,11 +46,17 @@ export const InventoryPanel: React.FC = () => {
       },
       {
         title: 'Compute Servers (Tier 9)',
-        types: v1Types.filter((t) => COMPONENT_RULES[t].slot === 9),
+        types: v1Types.filter((t) => COMPONENT_RULES[t].slot === 9 && !asyncScalingTypes.includes(t)),
       },
       {
         title: 'Storage & Caching (Tiers 10-11)',
-        types: v1Types.filter((t) => [10, 11].includes(COMPONENT_RULES[t].slot)),
+        types: v1Types.filter(
+          (t) => [10, 11].includes(COMPONENT_RULES[t].slot) && !asyncScalingTypes.includes(t)
+        ),
+      },
+      {
+        title: 'Async and data scaling',
+        types: v1Types.filter((t) => asyncScalingTypes.includes(t)),
       },
     ];
 

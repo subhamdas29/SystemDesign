@@ -5,7 +5,7 @@
  */
 
 import { SystemMetricSample, NodeMetricSample, SystemHealthResult } from '../../types/metrics';
-import { GraphConfig, ClientConfig } from '../../types';
+import { GraphConfig, ClientConfig, DatabaseConfig } from '../../types';
 import { RuntimeBottleneck } from './types';
 
 export interface HealthThresholds {
@@ -120,6 +120,32 @@ export function classifySystemHealth(
       reason: `${sample.totalServerInstances - sample.healthyServerCount} of ${sample.totalServerInstances} app servers are degraded or offline.`,
       details: [`Healthy servers: ${sample.healthyServerCount}/${sample.totalServerInstances}`],
     };
+  }
+
+  // Phase 9: Replication lag & stale read health check
+  const dbNode = graph.nodes.find((n) => n.type === 'database');
+  const dbCfg = dbNode?.config as DatabaseConfig | undefined;
+  const stalenessThresholdMs = dbCfg?.stalenessThresholdMs ?? 1000;
+  const repLag = (sample as unknown as { replicationLagMs?: number }).replicationLagMs;
+  if (repLag && repLag > stalenessThresholdMs) {
+    return {
+      status: 'degraded',
+      reason: `Replication lag (${Math.round(repLag)}ms) exceeds staleness threshold (${stalenessThresholdMs}ms). Read replicas may serve stale data.`,
+      details: [`Replication lag: ${repLag}ms`, `Staleness threshold: ${stalenessThresholdMs}ms`],
+    };
+  }
+
+  // Phase 9: Queue lag / buffer depth health check
+  const mqNode = graph.nodes.find((n) => n.type === 'message-queue');
+  if (mqNode) {
+    const mqSample = sample as unknown as { queueDepth?: number; consumerLagMs?: number };
+    if (mqSample.consumerLagMs && mqSample.consumerLagMs > 5000) {
+      return {
+        status: 'degraded',
+        reason: `High message queue consumer lag (${Math.round(mqSample.consumerLagMs / 1000)}s). Workers are falling behind arrival rate.`,
+        details: [`Queue depth: ${mqSample.queueDepth ?? 0}`, `Lag: ${mqSample.consumerLagMs}ms`],
+      };
+    }
   }
 
   // 6. Healthy

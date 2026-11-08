@@ -129,9 +129,10 @@ export function canAdd(graph: GraphConfig, type: ComponentType): CanAddResult {
 }
 
 /**
- * Automatically regenerates all edges for the graph based on slot ordering.
- * Connects every node in an occupied slot to every node in the next occupied slot.
- * DNS is flagged with isLookup = true.
+ * Automatically regenerates all edges for the graph based on slot ordering and lanes.
+ * - Main request lane: sequentially links occupied slots 1 through 11 with kind = 'request'.
+ * - Async lane: links app-server -> message-queue (kind = 'async'), message-queue -> worker (kind = 'async'), and worker -> database (kind = 'request').
+ * - Replica lane: links database -> database-replica (kind = 'replication').
  */
 export function generateEdges(nodes: GraphNode[], existingEdges: GraphEdge[] = []): GraphEdge[] {
   if (nodes.length <= 1) {
@@ -144,9 +145,57 @@ export function generateEdges(nodes: GraphNode[], existingEdges: GraphEdge[] = [
     existingMap.set(`${e.source}->${e.target}`, e);
   }
 
-  // Group nodes by their assigned slot number
+  const edges: GraphEdge[] = [];
+
+  const addEdge = (
+    sourceNode: GraphNode,
+    targetNode: GraphNode,
+    kind: 'request' | 'async' | 'replication',
+    isLookup = false
+  ) => {
+    const edgeId = `edge-${sourceNode.id}->${targetNode.id}`;
+    const prev = existingMap.get(edgeId) || existingMap.get(`${sourceNode.id}->${targetNode.id}`);
+    const defaultLatency =
+      sourceNode.type === 'client'
+        ? { ...EDGE_PRESETS['public-internet'] }
+        : { ...EDGE_PRESETS['same-datacenter'] };
+
+    edges.push({
+      id: edgeId,
+      source: sourceNode.id,
+      target: targetNode.id,
+      kind,
+      isLookup,
+      latency: prev?.latency ? { ...prev.latency } : defaultLatency,
+    });
+  };
+
+  // 1. Separate nodes into lanes
+  const mainLaneTypes = new Set<ComponentType>([
+    'client',
+    'dns',
+    'cdn',
+    'router',
+    'firewall',
+    'waf',
+    'rate-limiter',
+    'load-balancer',
+    'api-gateway',
+    'app-server',
+    'cache',
+    'database',
+  ]);
+
+  const mainNodes = nodes.filter((n) => mainLaneTypes.has(n.type));
+  const mqNodes = nodes.filter((n) => n.type === 'message-queue');
+  const workerNodes = nodes.filter((n) => n.type === 'worker');
+  const replicaNodes = nodes.filter((n) => n.type === 'database-replica');
+  const appServerNodes = nodes.filter((n) => n.type === 'app-server');
+  const dbNodes = nodes.filter((n) => n.type === 'database');
+
+  // Main lane slot ordering
   const nodesBySlot = new Map<number, GraphNode[]>();
-  for (const node of nodes) {
+  for (const node of mainNodes) {
     const slot = COMPONENT_RULES[node.type]?.slot ?? 99;
     if (!nodesBySlot.has(slot)) {
       nodesBySlot.set(slot, []);
@@ -154,10 +203,7 @@ export function generateEdges(nodes: GraphNode[], existingEdges: GraphEdge[] = [
     nodesBySlot.get(slot)!.push(node);
   }
 
-  // Get all occupied slots in ascending tier order
   const occupiedSlots = Array.from(nodesBySlot.keys()).sort((a, b) => a - b);
-  const edges: GraphEdge[] = [];
-
   for (let i = 0; i < occupiedSlots.length - 1; i++) {
     const currentSlot = occupiedSlots[i];
     const nextSlot = occupiedSlots[i + 1];
@@ -168,24 +214,35 @@ export function generateEdges(nodes: GraphNode[], existingEdges: GraphEdge[] = [
 
     for (const sourceNode of currentNodes) {
       const isLookup = COMPONENT_RULES[sourceNode.type]?.pathBehavior === 'lookup';
-
       for (const targetNode of nextNodes) {
-        const edgeId = `edge-${sourceNode.id}->${targetNode.id}`;
-        const prev = existingMap.get(edgeId) || existingMap.get(`${sourceNode.id}->${targetNode.id}`);
-        const defaultLatency =
-          sourceNode.type === 'client'
-            ? { ...EDGE_PRESETS['public-internet'] }
-            : { ...EDGE_PRESETS['same-datacenter'] };
-
-        edges.push({
-          id: edgeId,
-          source: sourceNode.id,
-          target: targetNode.id,
-          kind: 'request',
-          isLookup,
-          latency: prev?.latency ? { ...prev.latency } : defaultLatency,
-        });
+        addEdge(sourceNode, targetNode, 'request', isLookup);
       }
+    }
+  }
+
+  // 2. Async lane wiring:
+  // app-server -> message-queue (kind: 'async')
+  // message-queue -> worker (kind: 'async')
+  // worker -> database (kind: 'request')
+  for (const mq of mqNodes) {
+    for (const app of appServerNodes) {
+      addEdge(app, mq, 'async', false);
+    }
+    for (const worker of workerNodes) {
+      addEdge(mq, worker, 'async', false);
+    }
+  }
+  for (const worker of workerNodes) {
+    for (const db of dbNodes) {
+      addEdge(worker, db, 'request', false);
+    }
+  }
+
+  // 3. Replica lane wiring:
+  // database -> database-replica (kind: 'replication')
+  for (const db of dbNodes) {
+    for (const rep of replicaNodes) {
+      addEdge(db, rep, 'replication', false);
     }
   }
 
@@ -248,7 +305,24 @@ export function canRemove(graph: GraphConfig, nodeId: string): CanRemoveResult {
   if (node.type === 'app-server') {
     const serverCount = graph.nodes.filter((n) => n.type === 'app-server').length;
     if (serverCount <= 1) {
+      const hasQueue = graph.nodes.some((n) => n.type === 'message-queue');
+      if (hasQueue) {
+        return {
+          allowed: false,
+          reason: 'Cannot remove the last App Server while a Message Queue depends on it. Remove the Message Queue first.',
+        };
+      }
       return { allowed: false, reason: 'The system must have at least one App Server to handle requests.' };
+    }
+  }
+
+  if (node.type === 'message-queue') {
+    const hasWorkers = graph.nodes.some((n) => n.type === 'worker');
+    if (hasWorkers) {
+      return {
+        allowed: false,
+        reason: 'Cannot remove Message Queue while Async Workers depend on it. Remove Workers first.',
+      };
     }
   }
 
@@ -268,6 +342,13 @@ export function canRemove(graph: GraphConfig, nodeId: string): CanRemoveResult {
       return {
         allowed: false,
         reason: 'Cannot remove Database while a Cache is present. The Cache requires a persistent database behind it.',
+      };
+    }
+    const hasReplicas = graph.nodes.some((n) => n.type === 'database-replica');
+    if (hasReplicas) {
+      return {
+        allowed: false,
+        reason: 'Cannot remove Primary Database while Read Replicas replicate from it. Remove Replicas first.',
       };
     }
     const dbCount = graph.nodes.filter((n) => n.type === 'database').length;
@@ -325,8 +406,21 @@ export function canSwap(graph: GraphConfig, nodeId: string, targetType: Componen
 }
 
 /**
+ * Returns plain-language swap impact explanation between component types in the same swapGroup.
+ */
+export function getSwapExplanation(fromType: ComponentType, toType: ComponentType): string {
+  if (fromType === 'load-balancer' && toType === 'api-gateway') {
+    return 'API Gateway adds authentication, per-route rate limits, and edge response caching; costs additional latency.';
+  }
+  if (fromType === 'api-gateway' && toType === 'load-balancer') {
+    return 'Load Balancer provides low-latency, lightweight traffic distribution without authentication or route-level inspection overhead.';
+  }
+  return `Swapping ${fromType} with ${toType}.`;
+}
+
+/**
  * Swaps a node with another valid component in the same swapGroup,
- * preserving shared configuration fields (capacity, latencyMs).
+ * preserving shared configuration fields (capacity, latency, routing algorithm, timeouts, retry policies).
  */
 export function swapComponent(graph: GraphConfig, nodeId: string, targetType: ComponentType): GraphConfig {
   const check = canSwap(graph, nodeId, targetType);
@@ -337,12 +431,19 @@ export function swapComponent(graph: GraphConfig, nodeId: string, targetType: Co
   const oldNode = graph.nodes.find((n) => n.id === nodeId)!;
   const targetRule = COMPONENT_RULES[targetType];
   const targetDefaults = getDefaultConfig(targetType) as unknown as Record<string, unknown>;
+  const oldCfg = oldNode.config as Record<string, unknown>;
 
-  // Retain shared config values (capacity, latencyMs)
+  // Retain shared config values (capacity, latencyMs, routing algorithm, timeout, retry, circuitBreaker, connectionLimits)
   const mergedConfig = {
     ...targetDefaults,
-    capacity: (oldNode.config as { capacity?: number }).capacity ?? (targetDefaults.capacity as number),
-    latencyMs: (oldNode.config as { latencyMs?: number }).latencyMs ?? (targetDefaults.latencyMs as number),
+    capacityRps: oldCfg.capacityRps ?? targetDefaults.capacityRps,
+    processingLatencyMs: oldCfg.processingLatencyMs ?? targetDefaults.processingLatencyMs,
+    algorithm: oldCfg.backendAlgorithm ?? oldCfg.algorithm ?? targetDefaults.algorithm,
+    backendAlgorithm: oldCfg.algorithm ?? oldCfg.backendAlgorithm ?? targetDefaults.backendAlgorithm,
+    upstreamTimeoutMs: oldCfg.upstreamTimeoutMs ?? targetDefaults.upstreamTimeoutMs,
+    retryPolicy: oldCfg.retryPolicy ?? targetDefaults.retryPolicy,
+    circuitBreaker: oldCfg.circuitBreaker ?? targetDefaults.circuitBreaker,
+    connectionLimits: oldCfg.connectionLimits ?? targetDefaults.connectionLimits,
   } as unknown as AnyComponentConfig;
 
   const swappedNode: GraphNode = {

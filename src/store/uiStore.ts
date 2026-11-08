@@ -16,6 +16,14 @@ export interface UiStoreState {
   isInspectorOpen: boolean;
   isChaosPanelOpen: boolean;
   isPresetModalOpen: boolean;
+  isProjectLibraryOpen: boolean;
+  isShareModalOpen: boolean;
+  isExampleGalleryOpen: boolean;
+  isSettingsModalOpen: boolean;
+  isTourOpen: boolean;
+  isShortcutsOpen: boolean;
+  isGuideOpen: boolean;
+  activeTutorialId: string | null;
   draggingSwapNodeId: string | null;
   hint: string | null;
 
@@ -34,6 +42,22 @@ export interface UiStoreState {
   setChaosPanelOpen: (isOpen: boolean) => void;
   togglePresetModal: () => void;
   setPresetModalOpen: (isOpen: boolean) => void;
+  toggleProjectLibrary: () => void;
+  setProjectLibraryOpen: (isOpen: boolean) => void;
+  toggleShareModal: () => void;
+  setShareModalOpen: (isOpen: boolean) => void;
+  toggleExampleGallery: () => void;
+  setExampleGalleryOpen: (isOpen: boolean) => void;
+  toggleSettingsModal: () => void;
+  setSettingsModalOpen: (isOpen: boolean) => void;
+  toggleTour: () => void;
+  setTourOpen: (isOpen: boolean) => void;
+  toggleShortcuts: () => void;
+  setShortcutsOpen: (isOpen: boolean) => void;
+  toggleGuide: () => void;
+  setGuideOpen: (isOpen: boolean) => void;
+  startTutorial: (tutorialId: string) => void;
+  exitTutorial: () => void;
   setDraggingSwapNodeId: (nodeId: string | null) => void;
   setHint: (hint: string | null) => void;
 }
@@ -47,6 +71,14 @@ export const useUiStore = create<UiStoreState>((set) => ({
   isInspectorOpen: true,
   isChaosPanelOpen: false,
   isPresetModalOpen: false,
+  isProjectLibraryOpen: false,
+  isShareModalOpen: false,
+  isExampleGalleryOpen: false,
+  isSettingsModalOpen: false,
+  isTourOpen: false,
+  isShortcutsOpen: false,
+  isGuideOpen: false,
+  activeTutorialId: null,
   draggingSwapNodeId: null,
   hint: null,
 
@@ -75,6 +107,22 @@ export const useUiStore = create<UiStoreState>((set) => ({
   setChaosPanelOpen: (isOpen: boolean) => set({ isChaosPanelOpen: isOpen }),
   togglePresetModal: () => set((state) => ({ isPresetModalOpen: !state.isPresetModalOpen })),
   setPresetModalOpen: (isOpen: boolean) => set({ isPresetModalOpen: isOpen }),
+  toggleProjectLibrary: () => set((state) => ({ isProjectLibraryOpen: !state.isProjectLibraryOpen })),
+  setProjectLibraryOpen: (isOpen: boolean) => set({ isProjectLibraryOpen: isOpen }),
+  toggleShareModal: () => set((state) => ({ isShareModalOpen: !state.isShareModalOpen })),
+  setShareModalOpen: (isOpen: boolean) => set({ isShareModalOpen: isOpen }),
+  toggleExampleGallery: () => set((state) => ({ isExampleGalleryOpen: !state.isExampleGalleryOpen })),
+  setExampleGalleryOpen: (isOpen: boolean) => set({ isExampleGalleryOpen: isOpen }),
+  toggleSettingsModal: () => set((state) => ({ isSettingsModalOpen: !state.isSettingsModalOpen })),
+  setSettingsModalOpen: (isOpen: boolean) => set({ isSettingsModalOpen: isOpen }),
+  toggleTour: () => set((state) => ({ isTourOpen: !state.isTourOpen })),
+  setTourOpen: (isOpen: boolean) => set({ isTourOpen: isOpen }),
+  toggleShortcuts: () => set((state) => ({ isShortcutsOpen: !state.isShortcutsOpen })),
+  setShortcutsOpen: (isOpen: boolean) => set({ isShortcutsOpen: isOpen }),
+  toggleGuide: () => set((state) => ({ isGuideOpen: !state.isGuideOpen })),
+  setGuideOpen: (isOpen: boolean) => set({ isGuideOpen: isOpen }),
+  startTutorial: (tutorialId: string) => set({ activeTutorialId: tutorialId }),
+  exitTutorial: () => set({ activeTutorialId: null }),
   setDraggingSwapNodeId: (nodeId: string | null) => set({ draggingSwapNodeId: nodeId }),
   setHint: (hint: string | null) => set({ hint }),
 }));
@@ -88,5 +136,13 @@ export const selectIsInventoryOpen = (s: UiStoreState) => s.isInventoryOpen;
 export const selectIsInspectorOpen = (s: UiStoreState) => s.isInspectorOpen;
 export const selectIsChaosPanelOpen = (s: UiStoreState) => s.isChaosPanelOpen;
 export const selectIsPresetModalOpen = (s: UiStoreState) => s.isPresetModalOpen;
+export const selectIsProjectLibraryOpen = (s: UiStoreState) => s.isProjectLibraryOpen;
+export const selectIsShareModalOpen = (s: UiStoreState) => s.isShareModalOpen;
+export const selectIsExampleGalleryOpen = (s: UiStoreState) => s.isExampleGalleryOpen;
+export const selectIsSettingsModalOpen = (s: UiStoreState) => s.isSettingsModalOpen;
+export const selectIsTourOpen = (s: UiStoreState) => s.isTourOpen;
+export const selectIsShortcutsOpen = (s: UiStoreState) => s.isShortcutsOpen;
+export const selectIsGuideOpen = (s: UiStoreState) => s.isGuideOpen;
+export const selectActiveTutorialId = (s: UiStoreState) => s.activeTutorialId;
 export const selectDraggingSwapNodeId = (s: UiStoreState) => s.draggingSwapNodeId;
 export const selectHint = (s: UiStoreState) => s.hint;

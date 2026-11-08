@@ -27,6 +27,9 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
 
   const isLookup = Boolean(data && (data as { isLookup?: boolean }).isLookup);
   const latency = (data as { latency?: EdgeLatencyConfig })?.latency;
+  const edgeKind = (data as { kind?: 'request' | 'async' | 'replication' })?.kind ?? 'request';
+  const isAsync = edgeKind === 'async';
+  const isReplication = edgeKind === 'replication';
   const currentRps = useSimulationStore(selectSimRps);
   const status = useSimulationStore(selectSimPlayStatus);
   const activeFailures = useSimulationStore(selectActiveFailures);
@@ -65,16 +68,24 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
             ? '#ffffff'
             : edgeFailure
             ? '#ef4444'
+            : isReplication
+            ? '#a1a1aa'
+            : isAsync
+            ? '#e4e4e7'
             : isRunning && currentRps > 1000
             ? '#ffffff'
             : '#d4d4d4',
           strokeWidth,
-          strokeDasharray: isLookup ? '4 4' : currentRps > 10000 ? '4 4' : '6 6',
-          animation: `dashFlow-${id} ${animDuration} linear infinite`,
+          strokeDasharray: isAsync ? '2 5' : isReplication ? '6 4' : isLookup ? '4 4' : currentRps > 10000 ? '4 4' : '6 6',
+          animation: isReplication
+            ? 'pulse 2.5s ease-in-out infinite'
+            : `dashFlow-${id} ${animDuration} linear infinite`,
           filter: isSelected
             ? 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.9))'
             : edgeFailure
             ? 'drop-shadow(0 0 6px rgba(239, 68, 68, 0.7))'
+            : isReplication
+            ? 'drop-shadow(0 0 4px rgba(161, 161, 170, 0.4))'
             : isRunning
             ? `drop-shadow(0 0 ${Math.min(8, 2 * flowFactor)}px rgba(255, 255, 255, 0.6))`
             : 'drop-shadow(0 0 3px rgba(212, 212, 212, 0.3))',

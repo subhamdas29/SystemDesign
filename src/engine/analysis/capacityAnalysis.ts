@@ -10,8 +10,10 @@ import {
   DatabaseConfig,
   AppServerConfig,
   ClientConfig,
+  DatabaseReplicaConfig,
 } from '../../types';
 import { getComponentModel } from '../components/registry';
+import { calculateShardedMaxThroughput } from '../components/databaseModel';
 import {
   StaticCapacityAnalysis,
   ComponentCapacityResult,
@@ -27,6 +29,9 @@ export function analyzeCapacity(
   const clientNode = graph.nodes.find((n) => n.type === 'client');
   const cacheNode = graph.nodes.find((n) => n.type === 'cache');
   const appServerNodes = graph.nodes.filter((n) => n.type === 'app-server');
+  const mqNode = graph.nodes.find((n) => n.type === 'message-queue');
+  const workerNodes = graph.nodes.filter((n) => n.type === 'worker');
+  const replicaNodes = graph.nodes.filter((n) => n.type === 'database-replica');
   const entryPointNode = graph.nodes.find(
     (n) => n.type === 'load-balancer' || n.type === 'api-gateway'
   );
@@ -90,14 +95,14 @@ export function analyzeCapacity(
       effectiveCapacity = model.getEffectiveCapacityRps(node.config);
       limitingFactor = 'Memory lookup operations limit';
     } else if (type === 'database') {
-      if (cacheNode) {
-        // Writes always hit DB; reads hit DB only on cache miss
-        loadShare = writeRatio + readRatio * (1 - cacheHitRatio);
-      } else {
-        loadShare = 1.0;
-      }
-
       const dbCfg = node.config as DatabaseConfig;
+      let readMissShare = cacheNode ? readRatio * (1 - cacheHitRatio) : readRatio;
+      if (replicaNodes.length > 0) {
+        const replicaShare = (dbCfg.readFromReplicasShare ?? 90) / 100;
+        readMissShare *= (1 - replicaShare);
+      }
+      loadShare = writeRatio + readMissShare;
+
       const readLatency = dbCfg.readQueryLatencyMs ?? dbCfg.queryLatencyMs ?? 20;
       const writeLatency = dbCfg.writeQueryLatencyMs ?? dbCfg.queryLatencyMs ?? 30;
       const avgLatencyMs = Math.max(1, readRatio * readLatency + writeRatio * writeLatency);
@@ -106,10 +111,38 @@ export function analyzeCapacity(
       const poolCapacity = Math.floor(dbCfg.connectionPoolSize / (avgLatencyMs / 1000));
       effectiveCapacity = Math.min(dbCfg.maxQueryThroughputQps, poolCapacity);
 
-      limitingFactor =
-        poolCapacity < dbCfg.maxQueryThroughputQps
-          ? `Connection pool (${dbCfg.connectionPoolSize} conns @ ${Math.round(avgLatencyMs)}ms)`
-          : `Max query throughput (${dbCfg.maxQueryThroughputQps} QPS)`;
+      if (dbCfg.shardCount && dbCfg.shardCount > 1) {
+        const sharded = calculateShardedMaxThroughput(
+          dbCfg.maxQueryThroughputQps,
+          dbCfg.shardCount,
+          dbCfg.shardKeyDistribution ?? 'uniform',
+          dbCfg.zipfSkew ?? 1.2
+        );
+        effectiveCapacity = Math.min(effectiveCapacity, sharded.maxSustainableRps);
+        limitingFactor =
+          dbCfg.shardKeyDistribution === 'zipf-skewed'
+            ? `Hot shard saturation: Shard 1 bottleneck (${sharded.maxSustainableRps} QPS)`
+            : `Sharded throughput (${dbCfg.maxQueryThroughputQps} QPS across ${dbCfg.shardCount} shards)`;
+      } else {
+        limitingFactor =
+          poolCapacity < dbCfg.maxQueryThroughputQps
+            ? `Connection pool (${dbCfg.connectionPoolSize} conns @ ${Math.round(avgLatencyMs)}ms)`
+            : `Max query throughput (${dbCfg.maxQueryThroughputQps} QPS)`;
+      }
+    } else if (type === 'message-queue') {
+      loadShare = writeRatio * 0.8;
+      const model = getComponentModel(type);
+      effectiveCapacity = model.getEffectiveCapacityRps(node.config);
+      limitingFactor = 'Message Queue broker throughput limit';
+    } else if (type === 'worker') {
+      loadShare = (writeRatio * 0.8) / Math.max(1, workerNodes.length);
+      const model = getComponentModel(type);
+      effectiveCapacity = model.getEffectiveCapacityRps(node.config);
+      limitingFactor = 'Async Worker processing concurrency limit';
+    } else if (type === 'database-replica') {
+      loadShare = (readRatio * (1 - cacheHitRatio) * 0.9) / Math.max(1, replicaNodes.length);
+      effectiveCapacity = (node.config as DatabaseReplicaConfig).capacityQps;
+      limitingFactor = 'Read Replica query throughput limit';
     } else {
       const model = getComponentModel(type);
       effectiveCapacity = model.getEffectiveCapacityRps(node.config);
@@ -160,16 +193,41 @@ export function analyzeCapacity(
 
   switch (bottleneckType) {
     case 'database': {
+      const dbCfg = graph.nodes.find((n) => n.id === bottleneckNodeId)?.config as DatabaseConfig | undefined;
       const dbSharePercent = Math.round(
         (componentBreakdown[bottleneckNodeId]?.loadShare ?? 1.0) * 100
       );
-      if (!cacheNode) {
-        explanation = `The Database is your system's bottleneck, sustaining at most ${sustainableRps.toLocaleString()} RPS because it handles 100% of all read and write queries directly.`;
-        suggestedFixes.push('cache');
+      if (dbCfg?.shardCount && dbCfg.shardCount > 1 && dbCfg.shardKeyDistribution === 'zipf-skewed') {
+        explanation = `One shard is hot: Shard 1 is saturated by skewed key distribution while other shards have free headroom. Improve key distribution or add shards.`;
+        suggestedFixes.push('database');
+      } else if (!cacheNode && replicaNodes.length === 0) {
+        explanation = `The Database is your system's bottleneck, sustaining at most ${sustainableRps.toLocaleString()} RPS because it handles 100% of all read and write queries directly. Reads are overloading the Database: add a Cache or read replicas.`;
+        suggestedFixes.push('cache', 'database-replica');
+      } else if (writeRatio > 0.4 && !mqNode) {
+        explanation = `The Database is your system's bottleneck under heavy write load. Writes spike: add a Message Queue and Workers.`;
+        suggestedFixes.push('message-queue', 'worker');
       } else {
         explanation = `The Database is your system's bottleneck, sustaining at most ${sustainableRps.toLocaleString()} RPS because it still serves ${dbSharePercent}% of traffic (writes + cache misses).`;
-        suggestedFixes.push('cache', 'database');
+        suggestedFixes.push('cache', 'database-replica');
       }
+      break;
+    }
+
+    case 'message-queue': {
+      explanation = `The Message Queue throughput limit of ${componentBreakdown[bottleneckNodeId]?.effectiveCapacityRps.toLocaleString()} RPS is the bottleneck. Increase queue capacity or add workers.`;
+      suggestedFixes.push('message-queue', 'worker');
+      break;
+    }
+
+    case 'worker': {
+      explanation = `Async Workers cannot keep up with the queue arrival rate. Add more Worker instances to increase drain throughput.`;
+      suggestedFixes.push('worker');
+      break;
+    }
+
+    case 'database-replica': {
+      explanation = `Read Replicas are saturated at ${componentBreakdown[bottleneckNodeId]?.effectiveCapacityRps.toLocaleString()} QPS. Add more replica instances to spread query load.`;
+      suggestedFixes.push('database-replica');
       break;
     }
 

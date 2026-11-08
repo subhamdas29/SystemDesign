@@ -30,6 +30,9 @@ export interface EngineTopology {
   entryNode?: RuntimeNode;
   cacheNode?: RuntimeNode;
   databaseNode?: RuntimeNode;
+  messageQueueNode?: RuntimeNode;
+  workerNodes: RuntimeNode[];
+  replicaNodes: RuntimeNode[];
   appServerNodes: RuntimeNode[];
   forwardingChain: string[][]; // Node IDs grouped by occupied slots (excluding DNS)
   outgoingEdges: Map<string, string[]>;
@@ -80,6 +83,26 @@ function resolveLimits(node: GraphNode): { concurrencyLimit: number; queueLimit:
       return {
         concurrencyLimit: 2000,
         queueLimit: 1000,
+      };
+    case 'api-gateway':
+      return {
+        concurrencyLimit: Math.max(100, Math.floor(Number(cfg.capacityRps ?? 50000) / 100)),
+        queueLimit: Number(cfg.queueLimit ?? 2000),
+      };
+    case 'message-queue':
+      return {
+        concurrencyLimit: Number(cfg.capacityRps ?? 25000),
+        queueLimit: Number(cfg.maxQueueDepth ?? 50000),
+      };
+    case 'worker':
+      return {
+        concurrencyLimit: Number(cfg.instances ?? 2) * Number(cfg.concurrency ?? 5),
+        queueLimit: 1000,
+      };
+    case 'database-replica':
+      return {
+        concurrencyLimit: Math.max(50, Math.floor(Number(cfg.capacityQps ?? 800) / 10)),
+        queueLimit: 200,
       };
     default:
       return {
@@ -144,12 +167,23 @@ export function buildTopology(graph: GraphConfig, masterSeed: number): EngineTop
   const dnsNode = Array.from(nodes.values()).find((n) => n.type === 'dns');
   const cacheNode = Array.from(nodes.values()).find((n) => n.type === 'cache');
   const databaseNode = Array.from(nodes.values()).find((n) => n.type === 'database');
+  const messageQueueNode = Array.from(nodes.values()).find((n) => n.type === 'message-queue');
+  const workerNodes = Array.from(nodes.values()).filter((n) => n.type === 'worker');
+  const replicaNodes = Array.from(nodes.values()).filter((n) => n.type === 'database-replica');
   const appServerNodes = Array.from(nodes.values()).filter((n) => n.type === 'app-server');
 
-  // Build forwarding chain ordered by occupied tier slots (excluding DNS which is lookup-only)
+  // Build forwarding chain ordered by occupied tier slots (excluding DNS, async queue/workers, and replicas)
   const slotsMap = new Map<number, string[]>();
   for (const node of nodes.values()) {
-    if (node.type === 'client' || node.type === 'dns') continue;
+    if (
+      node.type === 'client' ||
+      node.type === 'dns' ||
+      node.type === 'message-queue' ||
+      node.type === 'worker' ||
+      node.type === 'database-replica'
+    ) {
+      continue;
+    }
     if (!slotsMap.has(node.slot)) {
       slotsMap.set(node.slot, []);
     }
@@ -166,6 +200,9 @@ export function buildTopology(graph: GraphConfig, masterSeed: number): EngineTop
     entryNode: forwardingChain[0] ? nodes.get(forwardingChain[0][0]!) : undefined,
     cacheNode,
     databaseNode,
+    messageQueueNode,
+    workerNodes,
+    replicaNodes,
     appServerNodes,
     forwardingChain,
     outgoingEdges,

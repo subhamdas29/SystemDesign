@@ -44,6 +44,53 @@ export function emitMetricsSample(
   const timedOutRps = Math.round(timedOutDelta / timeDeltaSec);
   const retryRps = Math.round(retriedDelta / timeDeltaSec);
 
+  // Multi-class split rates
+  const legitCreatedDelta = previousSnapshot
+    ? Math.max(
+        0,
+        (snapshot.counters.legitimate?.created ?? 0) -
+          (previousSnapshot.counters.legitimate?.created ?? 0)
+      )
+    : snapshot.counters.legitimate?.created ?? 0;
+  const malCreatedDelta = previousSnapshot
+    ? Math.max(
+        0,
+        (snapshot.counters.malicious?.created ?? 0) -
+          (previousSnapshot.counters.malicious?.created ?? 0)
+      )
+    : snapshot.counters.malicious?.created ?? 0;
+
+  const legitimateIncomingRps = Math.round(legitCreatedDelta / timeDeltaSec);
+  const maliciousIncomingRps = Math.round(malCreatedDelta / timeDeltaSec);
+  const legitimateSuccessRate = snapshot.counters.legitimateSuccessRate ?? 100;
+  const attackTrafficShare = snapshot.counters.attackTrafficShare ?? 0;
+  const exposureEventsCount = snapshot.counters.exposureEvents ?? 0;
+  const compromisedServersCount = snapshot.counters.compromisedServersCount ?? 0;
+  const dataEgressMb = snapshot.counters.dataEgressMb ?? 0;
+
+  // Phase 8B: Defense rate calculations
+  const blockedMalDelta = previousSnapshot
+    ? Math.max(0, (snapshot.counters.blockedMalicious ?? 0) - (previousSnapshot.counters.blockedMalicious ?? 0))
+    : (snapshot.counters.blockedMalicious ?? 0);
+  const blockedLegitDelta = previousSnapshot
+    ? Math.max(0, (snapshot.counters.blockedLegitimate ?? 0) - (previousSnapshot.counters.blockedLegitimate ?? 0))
+    : (snapshot.counters.blockedLegitimate ?? 0);
+  const blockedMaliciousRps = Math.round(blockedMalDelta / timeDeltaSec);
+  const blockedLegitimateRps = Math.round(blockedLegitDelta / timeDeltaSec);
+
+  const totalMaliciousCreated = snapshot.counters.malicious?.created ?? 0;
+  const totalMaliciousBlocked = snapshot.counters.blockedMalicious ?? 0;
+  const attackBlockedPercent = totalMaliciousCreated > 0
+    ? Math.min(100, Math.round((totalMaliciousBlocked / totalMaliciousCreated) * 1000) / 10)
+    : 0;
+
+  let circuitBreakerOpenCount = 0;
+  let quarantinedServerCount = 0;
+  for (const nState of Object.values(snapshot.runtimeNodes)) {
+    if (nState.circuitBreakerState === 'open') circuitBreakerOpenCount++;
+    if (nState.isQuarantined) quarantinedServerCount++;
+  }
+
   // Server instance counts
   const appNodes = graph.nodes.filter((n) => n.type === 'app-server');
   const totalServerInstances = appNodes.length;
@@ -85,6 +132,26 @@ export function emitMetricsSample(
     totalServerInstances,
     healthyServerCount,
     latencyHistogram: hist,
+    legitimateIncomingRps,
+    maliciousIncomingRps,
+    legitimateSuccessRate,
+    attackTrafficShare,
+    exposureEventsCount,
+    compromisedServersCount,
+    dataEgressMb,
+    blockedMaliciousRps,
+    blockedLegitimateRps,
+    attackBlockedPercent,
+    activeInstancesCount: snapshot.counters.activeInstancesCount,
+    circuitBreakerOpenCount,
+    quarantinedServerCount,
+    autoscalingCostDollars: snapshot.counters.autoscalingCostDollars,
+    queueDepth: snapshot.counters.queueDepth ?? 0,
+    consumerLagMs: snapshot.counters.consumerLagMs ?? 0,
+    replicationLagMs: snapshot.counters.replicationLagMs ?? 0,
+    staleReadsCount: snapshot.counters.staleReadsCount ?? 0,
+    asyncJobsEnqueued: snapshot.counters.asyncJobsEnqueued ?? 0,
+    asyncJobsProcessed: snapshot.counters.asyncJobsProcessed ?? 0,
   };
 
   const nodes: Record<string, NodeMetricSample> = {};
@@ -128,6 +195,14 @@ export function emitMetricsSample(
       queueLimit,
       estimatedCpuPercent: cpu,
       estimatedMemoryMb: mem,
+      attackTrafficShare: nState?.attackTrafficShare ?? 0,
+      isCompromised: nState?.isCompromised ?? false,
+      isQuarantined: nState?.isQuarantined ?? false,
+      circuitBreakerState: nState?.circuitBreakerState,
+      activeInstances: nState?.activeInstances,
+      pendingInstances: nState?.pendingInstances,
+      blockedMaliciousRps: nState?.blockedMaliciousRps ?? 0,
+      blockedLegitimateRps: nState?.blockedLegitimateRps ?? 0,
       status: nState?.status ?? 'healthy',
     };
   }

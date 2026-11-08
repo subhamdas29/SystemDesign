@@ -17,11 +17,33 @@ export const COMPONENT_TYPES = [
   'cache',
   'database',
   'message-queue',
+  'worker',
+  'database-replica',
 ] as const;
 
 export type ComponentType = (typeof COMPONENT_TYPES)[number];
 
-// --- Retry Policies & Presets ---
+import type {
+  FirewallConfig,
+  WafConfig,
+  RateLimiterConfig,
+  CdnConfig,
+  AutoscalingPolicy,
+  CircuitBreakerPolicy,
+  ConnectionLimitsConfig,
+  HardeningOptions,
+} from './defenses';
+
+export type {
+  FirewallConfig,
+  WafConfig,
+  RateLimiterConfig,
+  CdnConfig,
+  AutoscalingPolicy,
+  CircuitBreakerPolicy,
+  ConnectionLimitsConfig,
+  HardeningOptions,
+};
 
 export type RetryBackoffType = 'none' | 'fixed' | 'exponential' | 'exponential_jitter';
 
@@ -65,12 +87,18 @@ export const RETRY_PRESETS: Record<RetryPresetName, RetryPolicy> = {
 
 // --- Core Component Configs ---
 
+import type { WorkloadRoute } from './routes';
+
+export type { WorkloadRoute };
+
 export interface ClientConfig {
   readRatio: number; // Share of read vs write requests (0 to 100%, default 80%)
   requestTimeoutMs: number; // Max wait time for response before timing out (default 5000ms)
   rps: number; // Generated request rate (default 500 rps)
+  uniqueUsers?: number; // Unique legitimate source users (default derived from RPS, max 10,000)
   variabilityCv?: number; // Coefficient of variation for client pacing (default 0.5)
   retryPolicy?: RetryPolicy; // Client-side request retry policy
+  routes?: WorkloadRoute[]; // Phase 9: Custom workload routes breakdown
 }
 
 export interface DnsConfig {
@@ -105,6 +133,8 @@ export interface LoadBalancerConfig {
   variabilityCv?: number; // Lognormal latency coefficient of variation (default 0.5)
   retryPolicy?: RetryPolicy; // Upstream request retry policy
   perBackendWeights?: Record<string, number>; // Backend instance weights (1 to 100)
+  circuitBreaker?: CircuitBreakerPolicy; // Upstream backend circuit breaker
+  connectionLimits?: ConnectionLimitsConfig; // Ingress connection ceiling
 }
 
 export type AppServerOverloadBehavior = 'reject' | 'drop-oldest' | 'timeout';
@@ -119,10 +149,19 @@ export interface AppServerConfig {
   queueSize: number; // Request queue buffer size (default 500)
   overloadBehavior: AppServerOverloadBehavior; // Action when queue fills (default 'reject')
   health: ComponentHealth; // Operational status (default 'healthy')
+  instances?: number; // Active instance count (default 1, managed by autoscaling)
   databaseTimeoutMs?: number; // Max wait time for database response (default 3000ms)
   cacheTimeoutMs?: number; // Max wait time for cache response (default 500ms)
   variabilityCv?: number; // Lognormal service time variability CV (default 0.5)
   retryPolicy?: RetryPolicy; // Retry policy for downstream DB/cache calls
+  autoscaling?: AutoscalingPolicy; // Horizontal pod/server autoscaling policy
+  circuitBreaker?: CircuitBreakerPolicy; // Downstream dependency circuit breaker
+  connectionLimits?: ConnectionLimitsConfig; // Sockets and slowloris connection limits
+  hardening?: HardeningOptions; // Host and runtime security hardening
+
+  // Phase 9: Async worker write offloading
+  asyncWriteShare?: number; // Share of write requests enqueued asynchronously (0 to 100%, default 80%)
+  enqueueLatencyMs?: number; // Client latency overhead to enqueue to message queue (default 4ms)
 }
 
 export interface CacheConfig {
@@ -135,6 +174,12 @@ export interface CacheConfig {
   warmupPeriodMs?: number; // Time in ms to ramp from cold to target hit ratio after flush (default 10000ms)
 }
 
+export interface DatabaseFailoverConfig {
+  enabled: boolean;
+  detectionMs: number; // Failure detection timeout before promotion (default 3000ms)
+  promotionMs: number; // Time required to promote replica to primary (default 2000ms)
+}
+
 export interface DatabaseConfig {
   maxQueryThroughputQps: number; // Database operations limit (default 500 qps)
   queryLatencyMs: number; // Default baseline query execution time (default 45ms)
@@ -143,49 +188,71 @@ export interface DatabaseConfig {
   readQueryLatencyMs: number; // Optimized read query latency (default 30ms)
   writeQueryLatencyMs: number; // Transactional write query latency (default 60ms)
   variabilityCv?: number; // Lognormal query latency variability CV (default 0.5)
+  hardening?: HardeningOptions; // Least-privilege & injection hardening
+
+  // Phase 9: Read Replicas
+  readFromReplicasShare?: number; // Share of read queries routed to read replicas (0 to 100%, default 90%)
+  replicationApplyRate?: number; // Max write transactions replicas can apply per sec (default 300)
+  stalenessThresholdMs?: number; // Replication lag threshold for stale read warning (default 1000ms)
+  failover?: DatabaseFailoverConfig;
+
+  // Phase 9: Sharding
+  shardCount?: number; // Shard partition count: 1, 2, 4, 8 (default 1)
+  shardKeyDistribution?: 'uniform' | 'zipf-skewed'; // Key distribution pattern (default 'uniform')
+  zipfSkew?: number; // Skew parameter s (default 1.2)
+  crossShardQueryShare?: number; // Percentage of queries spanning multiple shards (default 10%)
+  crossShardPenaltyMultiplier?: number; // Latency and throughput multiplier on cross-shard queries (default 1.5)
 }
 
-// --- Auxiliary / Later Component Config Stubs ---
+// --- Phase 9 Components ---
 
-export interface CdnConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  hitRatio: number;
-  cacheTtlSeconds: number;
+export interface ApiGatewayPerRouteLimit {
+  routeId: string;
+  limitRps: number;
+  scope: 'per-source' | 'global';
 }
 
-export interface FirewallConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  dropRate: number;
-}
-
-export interface WafConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  inspectionDepthMs: number;
-  blockMaliciousOnly: boolean;
-}
-
-export interface RateLimiterConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  maxTokens: number;
-  refillRatePerSec: number;
+export interface ApiGatewayResponseCaching {
+  enabled: boolean;
+  ttlSeconds: number;
+  cacheableRoutes: string[]; // List of routeIds eligible for edge caching
 }
 
 export interface ApiGatewayConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  rateLimitEnabled: boolean;
-  authValidationMs: number;
+  capacityRps: number; // Max gateway routing capacity (default 50000 rps)
+  processingLatencyMs: number; // Base gateway overhead (default 4ms)
+  backendAlgorithm: LoadBalancerAlgorithm; // Algorithm for routing to app servers
+  authEnabled: boolean; // Whether token/credential authentication is verified
+  authLatencyMs: number; // Latency cost of full auth check on miss (default 15ms)
+  authCacheHitRatio: number; // Percentage of auth verifications served from cache (default 80%)
+  perRouteLimits: ApiGatewayPerRouteLimit[]; // Per-route rate limits
+  upstreamTimeoutMs: number; // Timeout waiting for upstream response (default 5000ms)
+  retryPolicy: RetryPolicy; // Upstream request retry policy
+  responseCaching: ApiGatewayResponseCaching; // Edge response caching policy
+  circuitBreaker?: CircuitBreakerPolicy;
+  connectionLimits?: ConnectionLimitsConfig;
 }
 
 export interface MessageQueueConfig {
-  capacityRps: number;
-  processingLatencyMs: number;
-  maxQueueDepth: number;
-  retentionHours: number;
+  capacityRps: number; // Maximum queue enqueue throughput (default 25000 rps)
+  processingLatencyMs: number; // Broker overhead per message (default 2ms)
+  maxQueueDepth: number; // Max messages buffered in memory/disk (default 50000)
+  enqueueLatencyMs: number; // Producer enqueue round-trip time (default 4ms)
+  retentionSeconds: number; // Message retention period (default 86400s / 24h)
+  overflowBehavior: 'reject' | 'drop-oldest'; // Behavior when maxQueueDepth is exceeded
+}
+
+export interface WorkerConfig {
+  instances: number; // Number of parallel worker server instances (1 to 10, default 2)
+  concurrency: number; // Parallel jobs per worker instance (default 5)
+  avgProcessingMs: number; // Background job processing compute time (default 80ms)
+  maxRetries: number; // Retries before pushing to dead-letter counter (default 3)
+  writeCostToDatabase: number; // Number of DB write operations per completed job (default 1)
+}
+
+export interface DatabaseReplicaConfig {
+  capacityQps: number; // Read query limit for this replica instance (default 800 qps)
+  queryLatencyMs: number; // Optimized read execution latency (default 25ms)
 }
 
 export type AnyComponentConfig =
@@ -201,4 +268,6 @@ export type AnyComponentConfig =
   | WafConfig
   | RateLimiterConfig
   | ApiGatewayConfig
-  | MessageQueueConfig;
+  | MessageQueueConfig
+  | WorkerConfig
+  | DatabaseReplicaConfig;

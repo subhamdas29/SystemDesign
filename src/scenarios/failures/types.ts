@@ -7,6 +7,7 @@ export type FailureType =
   | 'app-server-crash'
   | 'app-server-degraded'
   | 'app-server-slow'
+  | 'db-crash'
   | 'db-slow'
   | 'db-overload'
   | 'db-pool-exhaustion'

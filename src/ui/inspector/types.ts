@@ -64,6 +64,47 @@ export interface NodeLiveMetrics {
     waitingQueries: number;
     avgLatencyMs: number;
     p95LatencyMs: number;
+    perShardLoad?: Array<{ shardIndex: number; loadPercent: number; queryCount: number }>;
+    primaryReadSharePercent?: number;
+    replicaReadSharePercent?: number;
+    failoverState?: 'normal' | 'detecting' | 'promoting' | 'promoted';
+  };
+
+  apiGateway?: {
+    incomingRps: number;
+    passedRps: number;
+    authCacheHits: number;
+    auth401Count: number;
+    rateLimit429Count: number;
+    responseCacheHits: number;
+    perRouteRates: Array<{ routeId: string; rateRps: number; limitRps?: number }>;
+  };
+
+  messageQueue?: {
+    queueDepth: number;
+    maxQueueDepth: number;
+    oldestAgeMs: number;
+    enqueueRateRps: number;
+    drainRateRps: number;
+    droppedJobs: number;
+    overflowBehavior: 'reject' | 'drop-oldest';
+  };
+
+  worker?: {
+    instances: number;
+    concurrency: number;
+    activeJobs: number;
+    processedJobs: number;
+    retriesCount: number;
+    deadLetterCount: number;
+  };
+
+  databaseReplica?: {
+    queryRateQps: number;
+    replicationLagMs: number;
+    stalenessThresholdMs: number;
+    staleReadRate: number;
+    isStale: boolean;
   };
 
   generic?: {

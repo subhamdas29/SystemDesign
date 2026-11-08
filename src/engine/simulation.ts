@@ -24,9 +24,29 @@ import { generatePoissonTraffic } from './traffic';
 import { createPRNG, sampleGaussian, sampleLognormal, PRNG } from './rng';
 import { selectBackend } from './components/loadBalancerModel';
 import { decideHit } from './components/cacheModel';
-import { acquireConnection } from './components/databaseModel';
+import {
+  calculateZipfWeights,
+  acquireConnection,
+} from './components/databaseModel';
+import {
+  MessageQueueConfig,
+  WorkerConfig,
+  DatabaseReplicaConfig,
+} from '../types/components';
 import { decideDnsHit } from './components/dnsModel';
 import { getComponentModel } from './components/registry';
+import { evaluateFirewall } from './components/firewallModel';
+import { evaluateWaf } from './components/wafModel';
+import { evaluateRateLimiter } from './components/rateLimiterModel';
+import { evaluateCdn } from './components/cdnModel';
+import {
+  FirewallConfig,
+  WafConfig,
+  RateLimiterConfig,
+  CdnConfig,
+  CircuitBreakerPolicy,
+  ConnectionLimitsConfig,
+} from '../types/defenses';
 import {
   ClientConfig,
   CacheConfig,
@@ -39,8 +59,24 @@ import {
 import { detectBottleneck } from './analysis/bottleneckDetector';
 import { createAggregateSimulation } from './aggregateSimulation';
 import { ActiveFailure, ScenarioCommand, FailureType } from '../scenarios/failures/types';
+import { TrafficClassAttributes, TrafficOrigin, CampaignPhase } from '../types/attacks';
+import { getPhaseTrafficAttributes } from '../scenarios/attacks/campaign';
 
 export const MAX_EVENT_BUFFER = 50000;
+
+const defaultLegitimateClass: TrafficClassAttributes = {
+  origin: 'legitimate',
+  costMultiplier: 1.0,
+  connectionHoldMs: 0,
+  cacheable: true,
+  sourceCount: 1,
+  targetLayer: 'http',
+  exposureRisk: 0,
+};
+
+import { getEffectiveRoutes, pickRouteFromRoll } from '../types/routes';
+import { evaluateApiGateway } from './components/apiGatewayModel';
+import { ApiGatewayConfig } from '../types/components';
 
 interface InternalRequest {
   id: string;
@@ -48,6 +84,11 @@ interface InternalRequest {
   createdAtMs: number;
   attempt: number;
   kind: 'read' | 'write';
+  trafficClass: TrafficClassAttributes;
+  routeId?: string;
+  costMultiplier?: number;
+  cacheable?: boolean;
+  isAsyncJob?: boolean;
   status:
     | 'created'
     | 'in-transit'
@@ -73,7 +114,17 @@ type InternalEventType =
   | 'RESPONSE_HOP'
   | 'LB_HEALTH_CHECK'
   | 'SCENARIO_ACTION'
-  | 'CLIENT_TIMEOUT';
+  | 'CLIENT_TIMEOUT'
+  | 'ATTACK_PHASE_STARTED'
+  | 'ATTACK_PHASE_ENDED'
+  | 'COMPROMISED_SERVER_TICK'
+  | 'CIRCUIT_HALF_OPEN_TIMER'
+  | 'SCALE_OUT_COMPLETE'
+  | 'SERVER_QUARANTINE_TRIGGER'
+  | 'SERVER_RESTORE_TRIGGER'
+  | 'WORKER_JOB_COMPLETED'
+  | 'WORKER_DB_WRITE_COMPLETED'
+  | 'REPLICA_LAG_DRAIN_TICK';
 
 interface InternalEventData {
   type: InternalEventType;
@@ -109,6 +160,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
   // Master PRNG and traffic generation
   let masterRng = createPRNG(config.seed);
   let trafficRng = createPRNG(masterRng.nextInt(1, 0x7fffffff));
+  let attackerRng = createPRNG(masterRng.nextInt(1, 0x7fffffff));
 
   // Build topology with deterministic component PRNG substreams
   let topology: EngineTopology = buildTopology(config.graph, config.seed);
@@ -133,7 +185,47 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     packetLoss: 0,
     lateResponsesDiscarded: 0,
     amplificationFactor: 1.0,
+
+    legitimate: {
+      created: 0,
+      inFlight: 0,
+      succeeded: 0,
+      failed: 0,
+      rejected: 0,
+      timedOut: 0,
+      retried: 0,
+    },
+    malicious: {
+      created: 0,
+      inFlight: 0,
+      reachedTarget: 0,
+      rejected: 0,
+      dropped: 0,
+      timedOut: 0,
+    },
+    legitimateSuccessRate: 100,
+    attackTrafficShare: 0,
+    exposureEvents: 0,
+    compromisedServersCount: 0,
+    dataEgressMb: 0,
+    blockedMalicious: 0,
+    blockedLegitimate: 0,
+    defenseInspected: {},
+    defenseBlockedMalicious: {},
+    defenseBlockedLegitimate: {},
+    autoscalingCostDollars: 0,
+    activeInstancesCount: 0,
+    exposureLimitedCount: 0,
+    exposureFullCount: 0,
   };
+
+  interface NodeAttackStats {
+    isCompromised?: boolean;
+    attackTrafficShare?: number;
+    maliciousInflow?: number;
+    legitimateInflow?: number;
+  }
+  const nodeAttackStats = new Map<string, NodeAttackStats>();
 
   // Phase 7: Active Chaos & Failure Overrides
   let activeFailures: ActiveFailure[] = [];
@@ -177,6 +269,38 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     });
   }
 
+  // Phase 9: Async Message Queue and Worker state
+  interface AsyncJobItem {
+    jobId: string;
+    requestId: string;
+    enqueuedAtMs: number;
+    routeId?: string;
+    retries: number;
+  }
+  const asyncQueueBuffer: AsyncJobItem[] = [];
+  let totalAsyncJobsEnqueued = 0;
+  let totalAsyncJobsProcessed = 0;
+  let totalAsyncJobsDropped = 0;
+  let totalAsyncJobsDeadLettered = 0;
+  let totalJobCompletionMs = 0;
+  let completedJobCount = 0;
+  let jobsWritingToDb = 0;
+
+  // Phase 9: Read Replicas & Failover
+  const replicaLags = new Map<string, number>();
+  let staleReadsCount = 0;
+  let replicaLbCounter = 0;
+  let failoverState: 'normal' | 'detecting' | 'promoting' | 'promoted' = 'normal';
+  let failoverStartTimeMs: number | null = null;
+
+  for (const rep of topology.replicaNodes) {
+    replicaLags.set(rep.id, 5);
+  }
+
+  // Phase 9: Database Sharding
+  const initialShardCount = (topology.databaseNode?.config as DatabaseConfig)?.shardCount ?? 1;
+  let shardLoads: number[] = new Array(initialShardCount).fill(0);
+
   function emitEvent(
     type: SimulationEvent['type'],
     requestId: string,
@@ -195,8 +319,8 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       details,
     };
 
-    if (eventLog.length >= MAX_EVENT_BUFFER) {
-      eventLog.shift();
+    if (eventLog.length >= MAX_EVENT_BUFFER + 5000) {
+      eventLog = eventLog.slice(5000);
     }
     eventLog.push(event);
 
@@ -207,8 +331,143 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     pq.push(timeMs, ++eventSeq, data);
   }
 
+  function dispatchAsyncWorkers(): void {
+    if (asyncQueueBuffer.length === 0 || topology.workerNodes.length === 0) return;
+    for (const workerNode of topology.workerNodes) {
+      const wCfg = workerNode.config as WorkerConfig;
+      while (asyncQueueBuffer.length > 0 && workerNode.busySlots < workerNode.concurrencyLimit) {
+        const job = asyncQueueBuffer.shift()!;
+        workerNode.busySlots++;
+        const meanProc = wCfg.avgProcessingMs ?? 80;
+        const procTime = Math.max(1, Math.round(sampleLognormal(meanProc, 0.5, workerNode.rng)));
+
+        scheduleInternal(simTimeMs + procTime, {
+          type: 'WORKER_JOB_COMPLETED',
+          requestId: job.requestId,
+          nodeId: workerNode.id,
+          metadata: { job },
+        });
+      }
+    }
+  }
+
   function getClientConfig(): ClientConfig {
     return topology.clientNode.config as ClientConfig;
+  }
+
+  // --- Phase 8B: Defense Tracking & State Machines ---
+  const activeAttackPhases = new Map<string, CampaignPhase>();
+  const quarantinedServers = new Set<string>();
+
+  interface CircuitBreakerInternalState {
+    state: 'closed' | 'open' | 'half-open';
+    windowRequests: Array<{ timeMs: number; success: boolean }>;
+    openedAtMs: number;
+    halfOpenProbeCount: number;
+    halfOpenSuccessCount: number;
+  }
+  const circuitBreakerStates = new Map<string, CircuitBreakerInternalState>();
+
+  interface AutoscalingInternalState {
+    activeInstances: number;
+    pendingInstances: number;
+    highUtilStartTime: number | null;
+    cooldownUntilMs: number;
+  }
+  const autoscalingStates = new Map<string, AutoscalingInternalState>();
+
+  for (const node of topology.nodes.values()) {
+    if (node.type === 'app-server') {
+      const appCfg = node.config as AppServerConfig;
+      const asCfg = appCfg.autoscaling;
+      autoscalingStates.set(node.id, {
+        activeInstances: asCfg?.enabled ? Math.max(1, asCfg.minInstances ?? 1) : 1,
+        pendingInstances: 0,
+        highUtilStartTime: null,
+        cooldownUntilMs: 0,
+      });
+      circuitBreakerStates.set(node.id, {
+        state: 'closed',
+        windowRequests: [],
+        openedAtMs: 0,
+        halfOpenProbeCount: 0,
+        halfOpenSuccessCount: 0,
+      });
+    } else if (node.type === 'load-balancer') {
+      circuitBreakerStates.set(node.id, {
+        state: 'closed',
+        windowRequests: [],
+        openedAtMs: 0,
+        halfOpenProbeCount: 0,
+        halfOpenSuccessCount: 0,
+      });
+    }
+  }
+
+  function trackDefenseInspected(key: string): void {
+    counters.defenseInspected = counters.defenseInspected ?? {};
+    counters.defenseInspected[key] = (counters.defenseInspected[key] ?? 0) + 1;
+  }
+
+  function trackDefenseBlockedMalicious(key: string): void {
+    counters.defenseBlockedMalicious = counters.defenseBlockedMalicious ?? {};
+    counters.defenseBlockedMalicious[key] = (counters.defenseBlockedMalicious[key] ?? 0) + 1;
+  }
+
+  function trackDefenseBlockedLegitimate(key: string): void {
+    counters.defenseBlockedLegitimate = counters.defenseBlockedLegitimate ?? {};
+    counters.defenseBlockedLegitimate[key] = (counters.defenseBlockedLegitimate[key] ?? 0) + 1;
+  }
+
+  function recordCircuitBreakerOutcome(nodeId: string, success: boolean): void {
+    const cbState = circuitBreakerStates.get(nodeId);
+    const node = topology.nodes.get(nodeId);
+    const cbPolicy = (node?.config as { circuitBreaker?: CircuitBreakerPolicy })?.circuitBreaker;
+    if (!cbState || !cbPolicy?.enabled) return;
+
+    const windowMs = (cbPolicy.windowSec ?? 5) * 1000;
+    cbState.windowRequests.push({ timeMs: simTimeMs, success });
+    cbState.windowRequests = cbState.windowRequests.filter((r) => r.timeMs >= simTimeMs - windowMs);
+
+    if (cbState.state === 'half-open') {
+      cbState.halfOpenProbeCount++;
+      if (success) {
+        cbState.halfOpenSuccessCount++;
+        if (cbState.halfOpenSuccessCount >= (cbPolicy.halfOpenProbes ?? 3)) {
+          cbState.state = 'closed';
+          emitEvent('CIRCUIT_CLOSED', 'circuit-breaker', nodeId);
+        }
+      } else {
+        cbState.state = 'open';
+        cbState.openedAtMs = simTimeMs;
+        emitEvent('CIRCUIT_OPENED', 'circuit-breaker', nodeId, undefined, {
+          reason: 'PROBE_FAILED',
+        });
+        scheduleInternal(simTimeMs + (cbPolicy.openDurationSec ?? 5) * 1000, {
+          type: 'CIRCUIT_HALF_OPEN_TIMER',
+          requestId: '',
+          nodeId,
+        });
+      }
+    } else if (cbState.state === 'closed') {
+      if (cbState.windowRequests.length >= (cbPolicy.minRequestsInWindow ?? 10)) {
+        const failCount = cbState.windowRequests.filter((r) => !r.success).length;
+        const errorRate = failCount / cbState.windowRequests.length;
+        if (errorRate >= (cbPolicy.errorRateThreshold ?? 0.5)) {
+          cbState.state = 'open';
+          cbState.openedAtMs = simTimeMs;
+          emitEvent('CIRCUIT_OPENED', 'circuit-breaker', nodeId, undefined, {
+            errorRate,
+            threshold: cbPolicy.errorRateThreshold ?? 0.5,
+          });
+          scheduleInternal(simTimeMs + (cbPolicy.openDurationSec ?? 5) * 1000, {
+            type: 'CIRCUIT_HALF_OPEN_TIMER',
+            requestId: '',
+            nodeId,
+          });
+        }
+      }
+    }
   }
 
   // Edge traversal calculation (latency + Gaussian jitter + packet loss)
@@ -252,7 +511,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     });
   }
 
-  // Populate initial traffic arrivals
+  // Populate initial traffic arrivals (legitimate + attack campaign)
   function initTraffic(): void {
     const traffic = generatePoissonTraffic(config.traffic, trafficRng);
     for (const arrivalTime of traffic.arrivalTimesMs) {
@@ -260,8 +519,60 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       scheduleInternal(arrivalTime, {
         type: 'REQUEST_ARRIVAL',
         requestId: reqId,
+        metadata: { origin: 'legitimate' },
       });
       scheduleClientTimeout(reqId, arrivalTime);
+    }
+
+    // Schedule Campaign Attack Traffic if campaign is configured
+    if (config.campaign?.phases) {
+      for (const phase of config.campaign.phases) {
+        scheduleInternal(phase.startMs, {
+          type: 'ATTACK_PHASE_STARTED',
+          requestId: phase.id,
+          metadata: { phase },
+        });
+        scheduleInternal(phase.startMs + phase.durationMs, {
+          type: 'ATTACK_PHASE_ENDED',
+          requestId: phase.id,
+          metadata: { phase },
+        });
+
+        if (phase.scenarioId === 'compromised-server') {
+          const intervalMs = 1000;
+          for (let t = phase.startMs; t < phase.startMs + phase.durationMs; t += intervalMs) {
+            scheduleInternal(t, {
+              type: 'COMPROMISED_SERVER_TICK',
+              requestId: phase.id,
+              metadata: { phase },
+            });
+          }
+        } else {
+          const attackTrafficConfig = {
+            peakRps: phase.intensityRps,
+            durationMs: phase.durationMs,
+            pattern: 'constant' as const,
+            patternParams: { type: 'constant' as const },
+            mode: 'discrete' as const,
+          };
+          const attackTraffic = generatePoissonTraffic(attackTrafficConfig, attackerRng);
+          for (const relTime of attackTraffic.arrivalTimesMs) {
+            const arrivalTime = phase.startMs + relTime;
+            if (arrivalTime <= phase.startMs + phase.durationMs) {
+              const reqId = `req-atk-${phase.scenarioId}-${requestIdCounter++}`;
+              scheduleInternal(arrivalTime, {
+                type: 'REQUEST_ARRIVAL',
+                requestId: reqId,
+                metadata: {
+                  origin: 'malicious',
+                  phase,
+                },
+              });
+              scheduleClientTimeout(reqId, arrivalTime);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -323,14 +634,44 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       const nodeHealth = override?.health ?? (node.config as { health?: string }).health;
       const backendState = lbBackendStates.get(id);
 
+      const attackStats = nodeAttackStats.get(id);
+      const nodeTotal = (attackStats?.maliciousInflow ?? 0) + (attackStats?.legitimateInflow ?? 0);
+      const nodeShare =
+        nodeTotal > 0
+          ? Math.round(((attackStats?.maliciousInflow ?? 0) / nodeTotal) * 1000) / 10
+          : 0;
+
+      const cbState = circuitBreakerStates.get(id);
+      const asState = autoscalingStates.get(id);
+      const isQuar = quarantinedServers.has(id);
+      const wafCfg = node.type === 'waf' ? (node.config as WafConfig) : undefined;
+      const wafActiveRulesetsCount = wafCfg
+        ? (wafCfg.rulesets?.genericWebAttacks ? 1 : 0) +
+          (wafCfg.rulesets?.botProtection ? 1 : 0) +
+          (wafCfg.rulesets?.rateBasedRules ? 1 : 0)
+        : undefined;
+
+      const timeSec = Math.max(0.1, simTimeMs / 1000);
+      const computedRps = Math.round(nodeTotal / timeSec);
+
       runtimeNodes[id] = {
         ...node.state,
-        queueDepth: node.queue.length,
+        currentRps: computedRps,
+        queueDepth: node.type === 'message-queue' ? asyncQueueBuffer.length : node.queue.length,
         activeConnections: node.busySlots,
         utilization: Math.round(util * 100) / 100,
         healthCheckState: backendState?.healthCheckState,
+        attackTrafficShare: nodeShare,
+        isCompromised: attackStats?.isCompromised ?? false,
+        isQuarantined: isQuar,
+        circuitBreakerState: cbState?.state,
+        activeInstances: asState?.activeInstances,
+        pendingInstances: asState?.pendingInstances,
+        wafActiveRulesetsCount,
         status:
-          nodeHealth === 'down'
+          isQuar
+            ? 'failed'
+            : nodeHealth === 'down'
             ? 'failed'
             : node.queue.length > node.queueLimit * 0.8
             ? 'overloaded'
@@ -340,11 +681,72 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       };
     }
 
+    let totalInstances = 0;
+    let costSum = 0;
+    for (const [id, asState] of autoscalingStates.entries()) {
+      const node = topology.nodes.get(id);
+      const asPolicy = (node?.config as AppServerConfig)?.autoscaling;
+      if (asPolicy?.enabled) {
+        const extra = Math.max(0, asState.activeInstances - 1);
+        totalInstances += asState.activeInstances;
+        const hourly = asPolicy.costPerInstanceHour ?? 0.08;
+        costSum += extra * (hourly / 3600) * (simTimeMs / 1000);
+      }
+    }
+    counters.activeInstancesCount = totalInstances;
+    counters.autoscalingCostDollars = Math.round(costSum * 10000) / 10000;
+
+    const totalLegitCompleted =
+      (counters.legitimate?.succeeded ?? 0) +
+      (counters.legitimate?.failed ?? 0) +
+      (counters.legitimate?.rejected ?? 0) +
+      (counters.legitimate?.timedOut ?? 0);
+    const legitSuccessRate =
+      totalLegitCompleted > 0
+        ? Math.round(((counters.legitimate?.succeeded ?? 0) / totalLegitCompleted) * 1000) / 10
+        : 100.0;
+    counters.legitimateSuccessRate = legitSuccessRate;
+
+    const totalCreated = counters.created;
+    const attackShare =
+      totalCreated > 0
+        ? Math.round(((counters.malicious?.created ?? 0) / totalCreated) * 1000) / 10
+        : 0.0;
+    counters.attackTrafficShare = attackShare;
+
     const amplificationFactor =
       counters.created > 0
         ? Math.round(((counters.created + (counters.retried ?? 0)) / counters.created) * 100) / 100
         : 1.0;
     counters.amplificationFactor = amplificationFactor;
+
+    // Phase 9: Async queue, replica, and shard telemetry
+    counters.asyncJobsEnqueued = totalAsyncJobsEnqueued;
+    counters.asyncJobsProcessed = totalAsyncJobsProcessed;
+    counters.asyncJobsDropped = totalAsyncJobsDropped;
+    counters.asyncJobsDeadLettered = totalAsyncJobsDeadLettered;
+    counters.queueDepth = asyncQueueBuffer.length;
+    const workerInFlight = topology.workerNodes.reduce((acc, w) => acc + w.busySlots, 0) + jobsWritingToDb;
+    counters.asyncJobsInFlight = workerInFlight;
+    let workerDrainRate = 1;
+    if (topology.workerNodes.length > 0) {
+      const wNode = topology.workerNodes[0]!;
+      const wCfg = wNode.config as WorkerConfig;
+      const totalWorkerSlots = (wCfg.instances ?? 2) * (wCfg.concurrency ?? 5) * topology.workerNodes.length;
+      workerDrainRate = Math.max(1, totalWorkerSlots / ((wCfg.avgProcessingMs ?? 80) / 1000));
+    }
+    counters.consumerLagMs = Math.round(workerDrainRate > 0 ? (asyncQueueBuffer.length / workerDrainRate) * 1000 : 0);
+    const oldestAge = asyncQueueBuffer.length > 0 ? simTimeMs - asyncQueueBuffer[0]!.enqueuedAtMs : 0;
+    counters.oldestJobAgeMs = Math.round(oldestAge);
+    counters.avgJobCompletionLatencyMs = completedJobCount > 0 ? Math.round(totalJobCompletionMs / completedJobCount) : 0;
+    counters.staleReadsCount = staleReadsCount;
+    const lags = Array.from(replicaLags.values());
+    counters.replicationLagMs = lags.length > 0 ? Math.round(lags.reduce((a, b) => a + b, 0) / lags.length) : 5;
+    counters.failoverState = failoverState;
+    counters.shardLoads = [...shardLoads];
+    const maxShard = Math.max(1, ...shardLoads);
+    const totShard = shardLoads.reduce((a, b) => a + b, 0);
+    counters.hotShardLoadPercent = totShard > 0 ? Math.round((maxShard / totShard) * 100) : 100;
 
     const currentSnapshot: SimulationSnapshot = {
       timeMs: Math.round(simTimeMs * 100) / 100,
@@ -371,6 +773,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
 
   // Attempt to retry a failed or timed-out request
   function tryRetryRequest(req: InternalRequest, reason: string): boolean {
+    if (req.trafficClass?.origin !== 'legitimate') return false;
     const clientCfg = getClientConfig();
     const policy: RetryPolicy = clientCfg.retryPolicy ?? RETRY_PRESETS.none;
 
@@ -416,6 +819,9 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     }
 
     counters.retried = (counters.retried ?? 0) + 1;
+    if (counters.legitimate) {
+      counters.legitimate.retried = (counters.legitimate.retried ?? 0) + 1;
+    }
     counters.amplificationFactor =
       Math.round(((counters.created + counters.retried) / counters.created) * 100) / 100;
 
@@ -433,6 +839,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       createdAtMs: simTimeMs + delayMs,
       attempt: req.attempt + 1,
       kind: req.kind,
+      trafficClass: defaultLegitimateClass,
       status: 'created',
       statusCode: 200,
       path: [topology.clientNode.id],
@@ -443,7 +850,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     scheduleInternal(simTimeMs + delayMs, {
       type: 'REQUEST_ARRIVAL',
       requestId: retryReqId,
-      metadata: { isRetry: true },
+      metadata: { isRetry: true, origin: 'legitimate' },
     });
     scheduleClientTimeout(retryReqId, simTimeMs + delayMs);
 
@@ -462,6 +869,17 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       req.status = 'timed-out';
       req.statusCode = 504;
       counters.timedOut++;
+      if (req.trafficClass?.origin === 'malicious') {
+        if (counters.malicious) {
+          counters.malicious.timedOut++;
+          counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+        }
+      } else {
+        if (counters.legitimate) {
+          counters.legitimate.timedOut++;
+          counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+        }
+      }
       counters.inFlight = Math.max(0, counters.inFlight - 1);
 
       // Model orphaned work: downstream active work stays consumed in background
@@ -524,6 +942,12 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           nodeOverrides.set(cmd.targetId, {
             ...nodeOverrides.get(cmd.targetId),
             latencyMultiplier: mult,
+          });
+        } else if (cmd.failureType === 'db-crash') {
+          nodeOverrides.set(cmd.targetId, {
+            ...nodeOverrides.get(cmd.targetId),
+            health: 'down',
+            capacityFactor: 0,
           });
         } else if (cmd.failureType === 'db-slow') {
           const mult = Number(cmd.params?.multiplier ?? 5);
@@ -659,19 +1083,227 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       return;
     }
 
+    // --- Phase 8A: Attack Campaign Phase & Threat Events ---
+    if (type === 'ATTACK_PHASE_STARTED') {
+      const phase = metadata?.phase as CampaignPhase | undefined;
+      if (phase) {
+        activeAttackPhases.set(phase.id, phase);
+        emitEvent('ATTACK_PHASE_STARTED', phase.id, 'threat-source', undefined, {
+          scenarioId: phase.scenarioId,
+          intensityRps: phase.intensityRps,
+          sourceCount: phase.sourceCount,
+        });
+
+        if (phase.scenarioId === 'compromised-server') {
+          const targetId = phase.targetNodeId || topology.appServerNodes[0]?.id || 'app-server-1';
+          const targetNode = topology.appServerNodes.find((n) => n.id === targetId);
+          const appCfg = targetNode?.config as AppServerConfig | undefined;
+          const drain = phase.params?.capacityDrainFactor ?? 0.5;
+          nodeOverrides.set(targetId, {
+            ...nodeOverrides.get(targetId),
+            capacityFactor: drain,
+          });
+          const stats = nodeAttackStats.get(targetId) || {};
+          stats.isCompromised = true;
+          nodeAttackStats.set(targetId, stats);
+          counters.compromisedServersCount = Math.max(1, (counters.compromisedServersCount ?? 0) + 1);
+          emitEvent('SERVER_COMPROMISED', phase.id, targetId, undefined, {
+            initial: true,
+            drain,
+          });
+
+          // Phase 8B: Auto-quarantine trigger if hardening enabled
+          if (appCfg?.hardening?.autoQuarantine) {
+            const lag = appCfg.hardening.quarantineDetectionLagMs ?? 3000;
+            scheduleInternal(simTimeMs + lag, {
+              type: 'SERVER_QUARANTINE_TRIGGER',
+              requestId: '',
+              nodeId: targetId,
+              metadata: {
+                reimageDurationMs: appCfg.hardening.reimageDurationMs ?? 5000,
+              },
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    if (type === 'ATTACK_PHASE_ENDED') {
+      const phase = metadata?.phase as CampaignPhase | undefined;
+      if (phase) {
+        activeAttackPhases.delete(phase.id);
+        emitEvent('ATTACK_PHASE_ENDED', phase.id, 'threat-source', undefined, {
+          scenarioId: phase.scenarioId,
+        });
+
+        if (phase.scenarioId === 'compromised-server') {
+          for (const [id, stats] of nodeAttackStats.entries()) {
+            if (stats.isCompromised) {
+              stats.isCompromised = false;
+              nodeOverrides.delete(id);
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    if (type === 'COMPROMISED_SERVER_TICK') {
+      const phase = metadata?.phase as CampaignPhase | undefined;
+      if (phase) {
+        const targetId = phase.targetNodeId || topology.appServerNodes[0]?.id || 'app-server-1';
+        const serverNode = topology.appServerNodes.find((n) => n.id === targetId);
+        const appCfg = serverNode?.config as AppServerConfig | undefined;
+
+        let egress = phase.params?.egressRateMbPerSec ?? 5;
+        if (appCfg?.hardening?.egressFiltering) {
+          egress = egress * 0.10; // 90% egress reduction
+        }
+        counters.dataEgressMb = (counters.dataEgressMb ?? 0) + egress;
+        emitEvent('DATA_EXFILTRATED', phase.id, targetId, undefined, {
+          egressMb: egress,
+        });
+
+        let spreadRate = phase.params?.lateralSpreadRate ?? 0.15;
+        if (appCfg?.hardening?.networkSegmentation) {
+          spreadRate = spreadRate * 0.20; // 80% reduction in lateral spread
+        }
+
+        const uncompromised = topology.appServerNodes.filter(
+          (n) => !nodeAttackStats.get(n.id)?.isCompromised && !quarantinedServers.has(n.id)
+        );
+        if (uncompromised.length > 0 && attackerRng.next() < spreadRate) {
+          const nextVictim = uncompromised[0]!;
+          const victimCfg = nextVictim.config as AppServerConfig | undefined;
+          const drain = phase.params?.capacityDrainFactor ?? 0.5;
+          nodeOverrides.set(nextVictim.id, {
+            ...nodeOverrides.get(nextVictim.id),
+            capacityFactor: drain,
+          });
+          const stats = nodeAttackStats.get(nextVictim.id) || {};
+          stats.isCompromised = true;
+          nodeAttackStats.set(nextVictim.id, stats);
+          counters.compromisedServersCount = (counters.compromisedServersCount ?? 0) + 1;
+          emitEvent('SERVER_COMPROMISED', phase.id, nextVictim.id, undefined, {
+            lateralSpread: true,
+            drain,
+          });
+
+          if (victimCfg?.hardening?.autoQuarantine) {
+            const lag = victimCfg.hardening.quarantineDetectionLagMs ?? 3000;
+            scheduleInternal(simTimeMs + lag, {
+              type: 'SERVER_QUARANTINE_TRIGGER',
+              requestId: '',
+              nodeId: nextVictim.id,
+              metadata: {
+                reimageDurationMs: victimCfg.hardening.reimageDurationMs ?? 5000,
+              },
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    // --- Phase 8B: Defense Internal Handlers ---
+    if (type === 'CIRCUIT_HALF_OPEN_TIMER' && nodeId) {
+      const cbState = circuitBreakerStates.get(nodeId);
+      if (cbState && cbState.state === 'open') {
+        cbState.state = 'half-open';
+        cbState.halfOpenProbeCount = 0;
+        cbState.halfOpenSuccessCount = 0;
+        emitEvent('CIRCUIT_HALF_OPEN', 'cb-timer', nodeId);
+      }
+      return;
+    }
+
+    if (type === 'SCALE_OUT_COMPLETE' && nodeId) {
+      const asState = autoscalingStates.get(nodeId);
+      const node = topology.nodes.get(nodeId);
+      const asPolicy = (node?.config as AppServerConfig)?.autoscaling;
+      if (asState && asPolicy) {
+        asState.activeInstances += asState.pendingInstances;
+        asState.pendingInstances = 0;
+        asState.cooldownUntilMs = simTimeMs + (asPolicy.cooldownSec ?? 10) * 1000;
+        emitEvent('SCALE_OUT_COMPLETED', 'scale-out', nodeId, undefined, {
+          activeInstances: asState.activeInstances,
+        });
+      }
+      return;
+    }
+
+    if (type === 'SERVER_QUARANTINE_TRIGGER' && nodeId) {
+      quarantinedServers.add(nodeId);
+      nodeOverrides.set(nodeId, {
+        ...nodeOverrides.get(nodeId),
+        health: 'down',
+        capacityFactor: 0,
+      });
+      const reimageMs = (metadata?.reimageDurationMs as number) ?? 5000;
+      emitEvent('SERVER_QUARANTINED', 'quarantine', nodeId, undefined, {
+        reimageDurationMs: reimageMs,
+      });
+      scheduleInternal(simTimeMs + reimageMs, {
+        type: 'SERVER_RESTORE_TRIGGER',
+        requestId: '',
+        nodeId,
+      });
+      return;
+    }
+
+    if (type === 'SERVER_RESTORE_TRIGGER' && nodeId) {
+      quarantinedServers.delete(nodeId);
+      nodeOverrides.delete(nodeId);
+      const stats = nodeAttackStats.get(nodeId);
+      if (stats) stats.isCompromised = false;
+      counters.compromisedServersCount = Math.max(0, (counters.compromisedServersCount ?? 1) - 1);
+      emitEvent('SERVER_RESTORED', 'restore', nodeId);
+      return;
+    }
+
     let req = requests.get(requestId);
 
     // 1. New Request Arrival
     if (type === 'REQUEST_ARRIVAL') {
       const isRetry = Boolean(metadata?.isRetry);
+      const origin: TrafficOrigin = (metadata?.origin as TrafficOrigin) ?? 'legitimate';
+      const phase = metadata?.phase as CampaignPhase | undefined;
+
+      const trafficClass: TrafficClassAttributes =
+        origin === 'malicious' && phase
+          ? getPhaseTrafficAttributes(phase)
+          : defaultLegitimateClass;
+
       if (!isRetry) {
         counters.created++;
+        if (origin === 'malicious') {
+          if (counters.malicious) counters.malicious.created++;
+        } else {
+          if (counters.legitimate) counters.legitimate.created++;
+        }
       }
       counters.inFlight++;
+      if (origin === 'malicious') {
+        if (counters.malicious) counters.malicious.inFlight++;
+      } else {
+        if (counters.legitimate) counters.legitimate.inFlight++;
+      }
 
       const clientCfg = getClientConfig();
+      const routes = getEffectiveRoutes(clientCfg);
+      const roll = topology.clientNode.rng.next();
+      const chosenRoute = pickRouteFromRoll(routes, roll);
+
       const kind: 'read' | 'write' =
-        topology.clientNode.rng.next() < clientCfg.readRatio / 100 ? 'read' : 'write';
+        trafficClass.cacheable === false
+          ? 'read'
+          : chosenRoute.kind === 'read'
+          ? 'read'
+          : 'write';
+      const cacheable = trafficClass.cacheable === false ? false : chosenRoute.cacheable;
+      const costMultiplier = chosenRoute.costMultiplier;
+      const routeId = chosenRoute.id;
 
       if (!req) {
         req = {
@@ -679,12 +1311,51 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           createdAtMs: simTimeMs,
           attempt: 1,
           kind,
+          trafficClass,
+          routeId,
+          costMultiplier,
+          cacheable,
           status: 'created',
           statusCode: 200,
-          path: [topology.clientNode.id],
+          path: [origin === 'malicious' ? 'threat-source' : topology.clientNode.id],
           currentHopIndex: 0,
         };
         requests.set(requestId, req);
+      }
+
+      emitEvent('REQUEST_CREATED', req.id, req.path[0]!, undefined, {
+        kind: req.kind,
+        attempt: req.attempt,
+        origin: req.trafficClass.origin,
+        attackKind: req.trafficClass.attackKind,
+        sourceCount: req.trafficClass.sourceCount,
+      });
+
+      if (origin === 'malicious') {
+        const firstTier = topology.forwardingChain[0];
+        if (!firstTier || firstTier.length === 0) {
+          req.status = 'failed';
+          req.statusCode = 502;
+          counters.failed++;
+          if (counters.malicious) {
+            counters.malicious.dropped++;
+            counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+          }
+          counters.inFlight = Math.max(0, counters.inFlight - 1);
+          emitEvent('REQUEST_FAILED', req.id, 'threat-source', undefined, {
+            reason: 'NO_DOWNSTREAM_DESTINATION',
+          });
+          return;
+        }
+
+        const targetNodeId = firstTier[0]!;
+        req.status = 'in-transit';
+        scheduleInternal(simTimeMs + 1, {
+          type: 'ENTER_NODE',
+          requestId: req.id,
+          nodeId: targetNodeId,
+        });
+        return;
       }
 
       emitEvent('REQUEST_CREATED', req.id, topology.clientNode.id, undefined, {
@@ -779,6 +1450,30 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       req.path.push(nodeId);
       emitEvent('REQUEST_RECEIVED', req.id, nodeId);
 
+      // Check if server is quarantined
+      if (quarantinedServers.has(nodeId)) {
+        req.status = 'failed';
+        req.statusCode = 503;
+        counters.failed++;
+        if (req.trafficClass.origin === 'malicious') {
+          if (counters.malicious) {
+            counters.malicious.dropped++;
+            counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+          }
+        } else {
+          if (counters.legitimate) {
+            counters.legitimate.failed++;
+            counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+          }
+        }
+        counters.inFlight = Math.max(0, counters.inFlight - 1);
+        emitEvent('REQUEST_FAILED', req.id, nodeId, undefined, {
+          reason: 'SERVER_QUARANTINED',
+        });
+        tryRetryRequest(req, 'SERVER_QUARANTINED');
+        return;
+      }
+
       const override = nodeOverrides.get(nodeId);
       const isCrashed =
         override?.health === 'down' ||
@@ -788,6 +1483,23 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         req.status = 'failed';
         req.statusCode = 503;
         counters.failed++;
+        recordCircuitBreakerOutcome(nodeId, false);
+        for (const pNodeId of req.path) {
+          if (pNodeId !== nodeId) {
+            recordCircuitBreakerOutcome(pNodeId, false);
+          }
+        }
+        if (req.trafficClass.origin === 'malicious') {
+          if (counters.malicious) {
+            counters.malicious.dropped++;
+            counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+          }
+        } else {
+          if (counters.legitimate) {
+            counters.legitimate.failed++;
+            counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+          }
+        }
         counters.inFlight = Math.max(0, counters.inFlight - 1);
         emitEvent('REQUEST_FAILED', req.id, nodeId, undefined, {
           reason: 'NODE_DOWN',
@@ -796,13 +1508,332 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         return;
       }
 
-      // Check for Load Balancer routing
-      if (node.type === 'load-balancer') {
-        const lbCfg = node.config as LoadBalancerConfig;
+      // Track per-node attack/legitimate statistics
+      const stats = nodeAttackStats.get(nodeId) ?? { maliciousInflow: 0, legitimateInflow: 0 };
+      if (req.trafficClass.origin === 'malicious') {
+        stats.maliciousInflow = (stats.maliciousInflow ?? 0) + 1;
+      } else {
+        stats.legitimateInflow = (stats.legitimateInflow ?? 0) + 1;
+      }
+      nodeAttackStats.set(nodeId, stats);
 
-        // Health check detection window: LB only routes to backends that health check considers active!
+      // --- Phase 8B: Component-Level Defenses Evaluation ---
+      if (node.type === 'cdn') {
+        const cdnCfg = node.config as CdnConfig;
+        if (cdnCfg.enabled !== false) {
+          trackDefenseInspected('cdn');
+          const activePhase = Array.from(activeAttackPhases.values())[0];
+          const malRps = activePhase?.intensityRps ?? 0;
+          const cdnEval = evaluateCdn(
+            cdnCfg,
+            req.trafficClass.origin,
+            req.trafficClass.attackKind,
+            req.trafficClass.cacheable ?? true,
+            malRps
+          );
+          if (cdnEval.action === 'edge-hit') {
+            emitEvent('CACHE_HIT', req.id, nodeId, undefined, { edgeCacheHit: true });
+            req.status = 'succeeded';
+            counters.succeeded++;
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (req.trafficClass.origin === 'malicious') {
+              if (counters.malicious) {
+                counters.malicious.reachedTarget++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              if (counters.legitimate) {
+                counters.legitimate.succeeded++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
+            latencies.push(Math.max(1, Math.round(cdnEval.addedLatencyMs)));
+            scheduleInternal(simTimeMs + Math.max(1, Math.round(cdnEval.addedLatencyMs)), {
+              type: 'RESPONSE_HOP',
+              requestId: req.id,
+            });
+            return;
+          } else if (cdnEval.action === 'block') {
+            trackDefenseBlockedMalicious('cdn');
+            emitEvent('REQUEST_BLOCKED', req.id, nodeId, undefined, {
+              defense: 'cdn',
+              reason: cdnEval.reason ?? 'EDGE_DDOS_SCRUBBED',
+              class: req.trafficClass.origin,
+            });
+            req.status = 'rejected';
+            counters.blockedMalicious = (counters.blockedMalicious ?? 0) + 1;
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (counters.malicious) {
+              counters.malicious.dropped++;
+              counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+            }
+            return;
+          }
+        }
+      }
+
+      if (node.type === 'firewall') {
+        const fwCfg = node.config as FirewallConfig;
+        if (fwCfg.enabled !== false) {
+          trackDefenseInspected('firewall');
+          if (req.trafficClass.origin === 'malicious') {
+            const activePhase = Array.from(activeAttackPhases.values())[0];
+            const elapsedPhaseMs = activePhase ? Math.max(0, simTimeMs - activePhase.startMs) : 0;
+            const sourceCount = req.trafficClass.sourceCount ?? 1;
+            const fwEval = evaluateFirewall(fwCfg, 'malicious', elapsedPhaseMs, sourceCount);
+            if (fwEval.action === 'block' && node.rng.next() < fwEval.blockedFraction) {
+              trackDefenseBlockedMalicious('firewall');
+              emitEvent('REQUEST_BLOCKED', req.id, nodeId, undefined, {
+                defense: 'firewall',
+                reason: fwEval.reason ?? 'IP_BLOCKLISTED',
+                class: 'malicious',
+              });
+              req.status = 'rejected';
+              counters.blockedMalicious = (counters.blockedMalicious ?? 0) + 1;
+              counters.inFlight = Math.max(0, counters.inFlight - 1);
+              if (counters.malicious) {
+                counters.malicious.dropped++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+              return;
+            }
+          } else {
+            const fwEval = evaluateFirewall(fwCfg, 'legitimate', 0, 1);
+            if (fwEval.action === 'block' && node.rng.next() < fwEval.blockedFraction) {
+              trackDefenseBlockedLegitimate('firewall');
+              emitEvent('REQUEST_BLOCKED', req.id, nodeId, undefined, {
+                defense: 'firewall',
+                reason: 'FALSE_POSITIVE',
+                class: 'legitimate',
+              });
+              req.status = 'rejected';
+              counters.blockedLegitimate = (counters.blockedLegitimate ?? 0) + 1;
+              counters.inFlight = Math.max(0, counters.inFlight - 1);
+              if (counters.legitimate) {
+                counters.legitimate.failed++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+              return;
+            }
+          }
+        }
+      }
+
+      if (node.type === 'waf') {
+        const wafCfg = node.config as WafConfig;
+        if (wafCfg.enabled !== false) {
+          trackDefenseInspected('waf');
+          const activePhase = Array.from(activeAttackPhases.values())[0];
+          const currentRps = (activePhase?.intensityRps ?? 0) + (config.traffic.peakRps ?? 100);
+          const wafEval = evaluateWaf(wafCfg, req.trafficClass.origin, req.trafficClass.attackKind, currentRps);
+          if (wafEval.action === 'block' && node.rng.next() < wafEval.blockedFraction) {
+            if (req.trafficClass.origin === 'malicious') {
+              trackDefenseBlockedMalicious('waf');
+            } else {
+              trackDefenseBlockedLegitimate('waf');
+            }
+            emitEvent('REQUEST_BLOCKED', req.id, nodeId, undefined, {
+              defense: 'waf',
+              reason: wafEval.reason ?? 'WAF_RULE_VIOLATION',
+              class: req.trafficClass.origin,
+            });
+            req.status = 'rejected';
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (req.trafficClass.origin === 'malicious') {
+              counters.blockedMalicious = (counters.blockedMalicious ?? 0) + 1;
+              if (counters.malicious) {
+                counters.malicious.dropped++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              counters.blockedLegitimate = (counters.blockedLegitimate ?? 0) + 1;
+              if (counters.legitimate) {
+                counters.legitimate.failed++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
+            return;
+          }
+        }
+      }
+
+      if (node.type === 'rate-limiter') {
+        const rlCfg = node.config as RateLimiterConfig;
+        if (rlCfg.enabled !== false) {
+          trackDefenseInspected('rate-limiter');
+          const activePhase = Array.from(activeAttackPhases.values())[0];
+          const classRps = req.trafficClass.origin === 'malicious' ? (activePhase?.intensityRps ?? 100) : (config.traffic.peakRps ?? 100);
+          const totalRps = (activePhase?.intensityRps ?? 0) + (config.traffic.peakRps ?? 100);
+          const sourceCount = req.trafficClass.sourceCount ?? 1;
+          const rlEval = evaluateRateLimiter(rlCfg, classRps, sourceCount, totalRps);
+          if (rlEval.action === 'block' && node.rng.next() < rlEval.blockedFraction) {
+            if (req.trafficClass.origin === 'malicious') {
+              trackDefenseBlockedMalicious('rate-limiter');
+            } else {
+              trackDefenseBlockedLegitimate('rate-limiter');
+            }
+            emitEvent('REQUEST_BLOCKED', req.id, nodeId, undefined, {
+              defense: 'rate-limiter',
+              reason: rlEval.reason ?? 'RATE_LIMITED',
+              class: req.trafficClass.origin,
+            });
+            req.status = 'rejected';
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (req.trafficClass.origin === 'malicious') {
+              counters.blockedMalicious = (counters.blockedMalicious ?? 0) + 1;
+              if (counters.malicious) {
+                counters.malicious.dropped++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              counters.blockedLegitimate = (counters.blockedLegitimate ?? 0) + 1;
+              if (counters.legitimate) {
+                counters.legitimate.rejected++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
+            return;
+          }
+        }
+      }
+
+      // --- Phase 8B: Circuit Breaker Inspection on Entry ---
+      const cbState = circuitBreakerStates.get(nodeId);
+      const cbPolicy = (node.config as { circuitBreaker?: CircuitBreakerPolicy }).circuitBreaker;
+      if (cbPolicy?.enabled && cbState) {
+        if (cbState.state === 'open') {
+          if (simTimeMs >= cbState.openedAtMs + (cbPolicy.openDurationSec ?? 5) * 1000) {
+            cbState.state = 'half-open';
+            cbState.halfOpenProbeCount = 0;
+            cbState.halfOpenSuccessCount = 0;
+            emitEvent('CIRCUIT_HALF_OPEN', req.id, nodeId);
+          } else {
+            if (cbPolicy.fallback === 'serve-stale-from-cache' && topology.cacheNode && req.kind === 'read') {
+              emitEvent('CACHE_HIT', req.id, topology.cacheNode.id, undefined, {
+                circuitBreakerFallback: true,
+              });
+              req.status = 'succeeded';
+              counters.succeeded++;
+              counters.inFlight = Math.max(0, counters.inFlight - 1);
+              if (req.trafficClass.origin === 'malicious') {
+                if (counters.malicious) {
+                  counters.malicious.reachedTarget++;
+                  counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+                }
+              } else {
+                if (counters.legitimate) {
+                  counters.legitimate.succeeded++;
+                  counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+                }
+              }
+              latencies.push(10);
+              scheduleInternal(simTimeMs + 10, {
+                type: 'RESPONSE_HOP',
+                requestId: req.id,
+              });
+              return;
+            } else {
+              req.status = 'rejected';
+              req.statusCode = 503;
+              counters.rejected++;
+              counters.inFlight = Math.max(0, counters.inFlight - 1);
+              if (req.trafficClass.origin === 'malicious') {
+                if (counters.malicious) {
+                  counters.malicious.rejected++;
+                  counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+                }
+              } else {
+                if (counters.legitimate) {
+                  counters.legitimate.rejected++;
+                  counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+                }
+              }
+              emitEvent('REQUEST_REJECTED', req.id, nodeId, undefined, {
+                reason: 'CIRCUIT_BREAKER_OPEN',
+              });
+              return;
+            }
+          }
+        }
+      }
+
+      // Check for Load Balancer or API Gateway routing
+      if (node.type === 'load-balancer' || node.type === 'api-gateway') {
+        if (node.type === 'api-gateway') {
+          const gwCfg = node.config as ApiGatewayConfig;
+          const evalRes = evaluateApiGateway({
+            config: gwCfg,
+            routeId: req.routeId ?? 'default-read',
+            kind: req.kind,
+            cacheable: req.cacheable ?? (req.kind === 'read'),
+            isMalicious: req.trafficClass.origin === 'malicious',
+            attackKind: req.trafficClass.attackKind,
+            sourceCount: req.trafficClass.sourceCount ?? 1,
+            prngRoll: node.rng.next(),
+          });
+
+          if (evalRes.action === 'reject-429' || evalRes.action === 'reject-401') {
+            const statusCode = evalRes.action === 'reject-429' ? 429 : 401;
+            req.status = 'rejected';
+            req.statusCode = statusCode;
+            counters.rejected++;
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (req.trafficClass.origin === 'malicious') {
+              if (counters.malicious) {
+                counters.malicious.rejected++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              if (counters.legitimate) {
+                counters.legitimate.rejected++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
+            emitEvent('REQUEST_REJECTED', req.id, nodeId, undefined, {
+              reason: evalRes.reason,
+              statusCode,
+            });
+            return;
+          }
+
+          if (evalRes.action === 'response-cache-hit') {
+            emitEvent('CACHE_HIT', req.id, nodeId, undefined, {
+              source: 'api-gateway',
+              reason: evalRes.reason,
+            });
+            req.status = 'succeeded';
+            req.statusCode = 200;
+            counters.succeeded++;
+            counters.inFlight = Math.max(0, counters.inFlight - 1);
+            if (req.trafficClass.origin === 'malicious') {
+              if (counters.malicious) {
+                counters.malicious.reachedTarget++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              if (counters.legitimate) {
+                counters.legitimate.succeeded++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
+            const gatewayLatency = Math.max(1, evalRes.addedLatencyMs);
+            latencies.push(gatewayLatency);
+            scheduleInternal(simTimeMs + gatewayLatency, {
+              type: 'RESPONSE_HOP',
+              requestId: req.id,
+            });
+            return;
+          }
+        }
+
+        const algorithm =
+          node.type === 'api-gateway'
+            ? (node.config as ApiGatewayConfig).backendAlgorithm ?? 'round-robin'
+            : (node.config as LoadBalancerConfig).algorithm;
+
+        // Health check detection window + exclusion of quarantined servers
         const candidateBackends = topology.appServerNodes
-          .filter((n) => lbBackendStates.get(n.id)?.isUp ?? true)
+          .filter((n) => (lbBackendStates.get(n.id)?.isUp ?? true) && !quarantinedServers.has(n.id))
           .map((n) => n.id);
 
         const backendStates: Record<
@@ -811,7 +1842,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         > = {};
         for (const appNode of topology.appServerNodes) {
           const lbState = lbBackendStates.get(appNode.id);
-          const isUp = lbState ? lbState.isUp : true;
+          const isUp = lbState ? lbState.isUp && !quarantinedServers.has(appNode.id) : true;
           backendStates[appNode.id] = {
             id: appNode.id,
             health: isUp ? 'healthy' : 'down',
@@ -820,18 +1851,30 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         }
 
         const selectedBackend = selectBackend(
-          lbCfg.algorithm,
+          algorithm,
           candidateBackends,
           backendStates,
           node.rng,
           node.lbCounter++,
-          lbCfg.perBackendWeights
+          (node.config as LoadBalancerConfig).perBackendWeights
         );
 
         if (!selectedBackend) {
           req.status = 'failed';
           req.statusCode = 503;
           counters.failed++;
+          recordCircuitBreakerOutcome(nodeId, false);
+          if (req.trafficClass.origin === 'malicious') {
+            if (counters.malicious) {
+              counters.malicious.dropped++;
+              counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+            }
+          } else {
+            if (counters.legitimate) {
+              counters.legitimate.failed++;
+              counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+            }
+          }
           counters.inFlight = Math.max(0, counters.inFlight - 1);
           emitEvent('REQUEST_FAILED', req.id, nodeId, undefined, {
             reason: 'NO_HEALTHY_BACKEND',
@@ -840,8 +1883,10 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           return;
         }
 
+        recordCircuitBreakerOutcome(nodeId, true);
+
         emitEvent('LOAD_BALANCED', req.id, nodeId, selectedBackend, {
-          algorithm: lbCfg.algorithm,
+          algorithm,
         });
 
         // Forward to selected App Server with edge network hop
@@ -862,8 +1907,48 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         return;
       }
 
+      // --- Autoscaling Evaluation on App Server ---
+      const asState = autoscalingStates.get(nodeId);
+      const activeInstances = asState?.activeInstances ?? 1;
+      const asPolicy = (node.config as AppServerConfig)?.autoscaling;
+      const baseConcurrency = override?.connectionPoolSize ?? node.concurrencyLimit;
+      const concurrencyLimit = baseConcurrency * activeInstances;
+
+      if (node.type === 'app-server' && asPolicy?.enabled && asState) {
+        const util = node.busySlots / Math.max(1, concurrencyLimit);
+        if (util >= (asPolicy.scaleOutUtilizationPct ?? 75) / 100) {
+          if (asState.highUtilStartTime === null) {
+            asState.highUtilStartTime = simTimeMs;
+          } else if (simTimeMs - asState.highUtilStartTime >= (asPolicy.scaleOutAfterSec ?? 3) * 1000) {
+            if (
+              asState.activeInstances + asState.pendingInstances < (asPolicy.maxInstances ?? 6) &&
+              simTimeMs >= asState.cooldownUntilMs
+            ) {
+              asState.pendingInstances++;
+              asState.highUtilStartTime = null;
+              emitEvent('SCALE_OUT_REQUESTED', 'scale-out', nodeId, undefined, {
+                targetInstances: asState.activeInstances + asState.pendingInstances,
+              });
+              scheduleInternal(simTimeMs + (asPolicy.provisioningDelaySec ?? 5) * 1000, {
+                type: 'SCALE_OUT_COMPLETE',
+                requestId: '',
+                nodeId,
+              });
+            }
+          }
+        } else {
+          asState.highUtilStartTime = null;
+        }
+      }
+
+      // Connection Limits on App Server / Reverse Proxy
+      const connLimits = (node.config as { connectionLimits?: ConnectionLimitsConfig })?.connectionLimits;
+      let effectiveHoldMs = req.trafficClass?.connectionHoldMs ?? 0;
+      if (connLimits?.enabled && connLimits.headerTimeoutMs > 0 && effectiveHoldMs > 0) {
+        effectiveHoldMs = Math.min(effectiveHoldMs, connLimits.headerTimeoutMs);
+      }
+
       // Standard Node Processing / Queuing
-      const concurrencyLimit = override?.connectionPoolSize ?? node.concurrencyLimit;
       if (node.busySlots < concurrencyLimit) {
         node.busySlots++;
         req.status = 'processing';
@@ -874,12 +1959,14 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         const meanServiceTime = model.getServiceTimeMs(node.config, undefined, node.rng);
         const cv = (node.config as { variabilityCv?: number }).variabilityCv ?? 0.5;
         const mult = override?.latencyMultiplier ?? 1.0;
+        const costMult = req.trafficClass?.costMultiplier ?? 1.0;
 
-        // Lognormal service time sampling
-        const serviceTimeMs = Math.max(
-          1,
-          Math.round(sampleLognormal(meanServiceTime * mult, cv, node.rng))
-        );
+        // Lognormal service time sampling + effective hold time
+        const serviceTimeMs =
+          Math.max(
+            1,
+            Math.round(sampleLognormal(meanServiceTime * mult * costMult, cv, node.rng))
+          ) + effectiveHoldMs;
 
         scheduleInternal(simTimeMs + serviceTimeMs, {
           type: 'PROCESSING_COMPLETED',
@@ -897,6 +1984,18 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         req.status = 'rejected';
         req.statusCode = 503;
         counters.rejected++;
+        recordCircuitBreakerOutcome(nodeId, false);
+        if (req.trafficClass.origin === 'malicious') {
+          if (counters.malicious) {
+            counters.malicious.rejected++;
+            counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+          }
+        } else {
+          if (counters.legitimate) {
+            counters.legitimate.rejected++;
+            counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+          }
+        }
         counters.inFlight = Math.max(0, counters.inFlight - 1);
 
         emitEvent('REQUEST_REJECTED', req.id, nodeId, undefined, {
@@ -931,10 +2030,13 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           const cv = (node.config as { variabilityCv?: number }).variabilityCv ?? 0.5;
           const override = nodeOverrides.get(nodeId);
           const mult = override?.latencyMultiplier ?? 1.0;
-          const serviceTimeMs = Math.max(
-            1,
-            Math.round(sampleLognormal(meanServiceTime * mult, cv, node.rng))
-          );
+          const nextCostMult = nextReq.trafficClass?.costMultiplier ?? 1.0;
+          const nextHold = nextReq.trafficClass?.connectionHoldMs ?? 0;
+          const serviceTimeMs =
+            Math.max(
+              1,
+              Math.round(sampleLognormal(meanServiceTime * mult * nextCostMult, cv, node.rng))
+            ) + nextHold;
 
           scheduleInternal(simTimeMs + serviceTimeMs, {
             type: 'PROCESSING_COMPLETED',
@@ -955,42 +2057,248 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       if (node.type === 'app-server') {
         const cache = topology.cacheNode;
         const db = topology.databaseNode;
+        const mq = topology.messageQueueNode;
+        const appCfg = node.config as AppServerConfig;
 
-        // Read request checks Cache first if cache is present
-        if (req.kind === 'read' && cache) {
-          const cacheOverride = nodeOverrides.get(cache.id);
-          const isCacheDown =
-            cacheOverride?.health === 'down' ||
-            (cache.config as { health?: string }).health === 'down';
+        // 1. Write request with Message Queue + Workers: handle asynchronously!
+        if (req.kind === 'write' && mq && topology.workerNodes.length > 0) {
+          const asyncShare = appCfg.asyncWriteShare !== undefined ? appCfg.asyncWriteShare / 100 : 0.8;
+          if (node.rng.next() < asyncShare) {
+            const mqCfg = mq.config as MessageQueueConfig;
+            const maxDepth = mqCfg.maxQueueDepth ?? ((mqCfg as unknown as Record<string, unknown>).queueLimit as number) ?? 50000;
+            const overflowBehavior = mqCfg.overflowBehavior ?? ((mqCfg as unknown as Record<string, unknown>).overflowStrategy as 'reject' | 'drop-oldest') ?? 'reject';
+            const isFull = asyncQueueBuffer.length >= maxDepth;
 
-          // Cold cache model: effective hit ratio ramps from 0 to configured over warmup period
-          let effectiveHitRatio = (cache.config as CacheConfig).hitRatio ?? 85;
-          if (cacheFlushTimeMs !== null) {
-            const elapsed = simTimeMs - cacheFlushTimeMs;
-            if (elapsed < cacheWarmupMs) {
-              effectiveHitRatio = Math.round((elapsed / cacheWarmupMs) * effectiveHitRatio);
+            if (isFull && overflowBehavior === 'reject') {
+              req.status = 'rejected';
+              req.statusCode = 503;
+              counters.rejected++;
+              if (req.trafficClass?.origin === 'malicious') {
+                if (counters.malicious) {
+                  counters.malicious.rejected++;
+                  counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+                }
+              } else {
+                if (counters.legitimate) {
+                  counters.legitimate.rejected++;
+                  counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+                }
+              }
+              counters.inFlight = Math.max(0, counters.inFlight - 1);
+
+              emitEvent('REQUEST_REJECTED', req.id, mq.id, undefined, {
+                reason: 'QUEUE_OVERFLOW',
+                queueLimit: maxDepth,
+              });
+
+              scheduleInternal(simTimeMs + (appCfg.enqueueLatencyMs ?? 4), {
+                type: 'RESPONSE_HOP',
+                requestId: req.id,
+              });
+              return;
             }
-          }
 
-          const dynamicCacheCfg = {
-            ...(cache.config as CacheConfig),
-            hitRatio: effectiveHitRatio,
-          };
+            if (isFull && overflowBehavior === 'drop-oldest') {
+              const dropped = asyncQueueBuffer.shift();
+              totalAsyncJobsDropped++;
+              emitEvent('ASYNC_JOB_DROPPED', dropped?.jobId ?? 'job', mq.id, undefined, {
+                reason: 'DROP_OLDEST',
+              });
+            }
 
-          const isHit = decideHit(dynamicCacheCfg, cache.rng, isCacheDown);
-          if (isHit) {
-            emitEvent('CACHE_HIT', req.id, cache.id, undefined, {
-              effectiveHitRatio,
+            totalAsyncJobsEnqueued++;
+            const jobId = `job-${req.id}`;
+            asyncQueueBuffer.push({
+              jobId,
+              requestId: req.id,
+              enqueuedAtMs: simTimeMs,
+              routeId: req.routeId,
+              retries: 0,
             });
-            scheduleInternal(simTimeMs + 1, {
+
+            emitEvent('ASYNC_JOB_ENQUEUED', jobId, node.id, mq.id, {
+              queueDepth: asyncQueueBuffer.length,
+              isAsyncJob: true,
+            });
+
+            // Fast user-facing 202 Accepted response
+            req.statusCode = 202;
+            scheduleInternal(simTimeMs + (appCfg.enqueueLatencyMs ?? 4), {
               type: 'RESPONSE_HOP',
               requestId: req.id,
             });
+
+            dispatchAsyncWorkers();
             return;
-          } else {
+          }
+        }
+
+        // 2. Read request checks Cache first if cache is present
+        if (req.kind === 'read' && cache) {
+          if (req.trafficClass?.cacheable === false) {
+            // Uncacheable / cache-busting traffic forces 100% cache miss directly to DB
             emitEvent('CACHE_MISS', req.id, cache.id, undefined, {
-              effectiveHitRatio,
+              reason: 'CACHE_BUSTING',
             });
+          } else {
+            const cacheOverride = nodeOverrides.get(cache.id);
+            const isCacheDown =
+              cacheOverride?.health === 'down' ||
+              (cache.config as { health?: string }).health === 'down';
+
+            // Cold cache model: effective hit ratio ramps from 0 to configured over warmup period
+            let effectiveHitRatio = (cache.config as CacheConfig).hitRatio ?? 85;
+            if (cacheFlushTimeMs !== null) {
+              const elapsed = simTimeMs - cacheFlushTimeMs;
+              if (elapsed < cacheWarmupMs) {
+                effectiveHitRatio = Math.round((elapsed / cacheWarmupMs) * effectiveHitRatio);
+              }
+            }
+
+            const dynamicCacheCfg = {
+              ...(cache.config as CacheConfig),
+              hitRatio: effectiveHitRatio,
+            };
+
+            const isHit = decideHit(dynamicCacheCfg, cache.rng, isCacheDown);
+            if (isHit) {
+              emitEvent('CACHE_HIT', req.id, cache.id, undefined, {
+                effectiveHitRatio,
+              });
+              scheduleInternal(simTimeMs + 1, {
+                type: 'RESPONSE_HOP',
+                requestId: req.id,
+              });
+              return;
+            } else {
+              emitEvent('CACHE_MISS', req.id, cache.id, undefined, {
+                effectiveHitRatio,
+              });
+            }
+          }
+        }
+
+        // 3. Read cache-miss routed to Read Replicas if present
+        if (req.kind === 'read' && topology.replicaNodes.length > 0) {
+          const dbCfg = db?.config as DatabaseConfig | undefined;
+          const readFromReplicasShare = (dbCfg?.readFromReplicasShare ?? 90) / 100;
+          if (node.rng.next() < readFromReplicasShare) {
+            const healthyReplicas = topology.replicaNodes.filter((rep) => {
+              const ov = nodeOverrides.get(rep.id);
+              return !ov?.health && (rep.config as { health?: string }).health !== 'down';
+            });
+
+            if (healthyReplicas.length > 0) {
+              const replica = healthyReplicas[replicaLbCounter % healthyReplicas.length]!;
+              replicaLbCounter++;
+
+              const lagMs = replicaLags.get(replica.id) ?? 5;
+              const stalenessThresh = dbCfg?.stalenessThresholdMs ?? 1000;
+              if (lagMs > stalenessThresh) {
+                staleReadsCount++;
+                emitEvent('STALE_READ_SERVED', req.id, replica.id, undefined, {
+                  lagMs: Math.round(lagMs),
+                  thresholdMs: stalenessThresh,
+                });
+              }
+
+              const repCfg = replica.config as DatabaseReplicaConfig;
+              const repMean = repCfg.queryLatencyMs ?? 25;
+              const costMult = req.trafficClass?.costMultiplier ?? 1.0;
+              const repLatency = Math.max(
+                1,
+                Math.round(sampleLognormal(repMean * costMult, 0.5, replica.rng))
+              );
+
+              const repStats = nodeAttackStats.get(replica.id) ?? { maliciousInflow: 0, legitimateInflow: 0 };
+              if (req.trafficClass.origin === 'malicious') {
+                repStats.maliciousInflow = (repStats.maliciousInflow ?? 0) + 1;
+              } else {
+                repStats.legitimateInflow = (repStats.legitimateInflow ?? 0) + 1;
+              }
+              nodeAttackStats.set(replica.id, repStats);
+
+              emitEvent('DATABASE_QUERY', req.id, replica.id, undefined, {
+                isReplica: true,
+                isWrite: false,
+              });
+
+              scheduleInternal(simTimeMs + repLatency, {
+                type: 'RESPONSE_HOP',
+                requestId: req.id,
+              });
+              return;
+            }
+          }
+        }
+
+        // 4. Primary Database Failover Check
+        const dbOverride = db ? nodeOverrides.get(db.id) : undefined;
+        const isPrimaryDown =
+          !db ||
+          dbOverride?.health === 'down' ||
+          (db.config as { health?: string }).health === 'down';
+
+        if (isPrimaryDown) {
+          const dbCfg = db?.config as DatabaseConfig | undefined;
+          const failoverEnabled =
+            dbCfg?.failover?.enabled ??
+            ((dbCfg as unknown as Record<string, unknown>)?.autoFailoverEnabled as boolean) ??
+            true;
+          const detectionMs =
+            dbCfg?.failover?.detectionMs ??
+            ((dbCfg as unknown as Record<string, unknown>)?.failoverDetectionMs as number) ??
+            3000;
+          const promotionMs =
+            dbCfg?.failover?.promotionMs ??
+            ((dbCfg as unknown as Record<string, unknown>)?.failoverPromotionMs as number) ??
+            2000;
+
+          if (failoverEnabled && topology.replicaNodes.length > 0) {
+            if (failoverStartTimeMs === null) {
+              failoverStartTimeMs = simTimeMs;
+              failoverState = 'detecting';
+            }
+            const elapsed = simTimeMs - failoverStartTimeMs;
+
+            if (elapsed < detectionMs) {
+              failoverState = 'detecting';
+              req.status = 'failed';
+              req.statusCode = 500;
+              counters.failed++;
+              emitEvent('REQUEST_FAILED', req.id, db?.id ?? 'database', undefined, {
+                reason: 'PRIMARY_DOWN_FAILOVER_DETECTING',
+              });
+              scheduleInternal(simTimeMs + 5, { type: 'RESPONSE_HOP', requestId: req.id });
+              return;
+            } else if (elapsed < detectionMs + promotionMs) {
+              failoverState = 'promoting';
+              req.status = 'failed';
+              req.statusCode = 500;
+              counters.failed++;
+              emitEvent('REQUEST_FAILED', req.id, db?.id ?? 'database', undefined, {
+                reason: 'PRIMARY_DOWN_FAILOVER_PROMOTING',
+              });
+              scheduleInternal(simTimeMs + 5, { type: 'RESPONSE_HOP', requestId: req.id });
+              return;
+            } else {
+              if (failoverState !== 'promoted') {
+                failoverState = 'promoted';
+                const promotedReplica = topology.replicaNodes.shift()!;
+                emitEvent('FAILOVER_PROMOTED', 'failover-promoted', promotedReplica.id, undefined, {
+                  promotedId: promotedReplica.id,
+                });
+              }
+            }
+          } else {
+            req.status = 'failed';
+            req.statusCode = 500;
+            counters.failed++;
+            emitEvent('REQUEST_FAILED', req.id, db?.id ?? 'database', undefined, {
+              reason: 'PRIMARY_DOWN_NO_REPLICA',
+            });
+            scheduleInternal(simTimeMs + 5, { type: 'RESPONSE_HOP', requestId: req.id });
+            return;
           }
         }
 
@@ -1021,7 +2329,46 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
             const rawWrite = typeof dbRaw.writeLatencyMs === 'number' ? dbRaw.writeLatencyMs : undefined;
             const readMean = rawRead ?? dbCfg.readQueryLatencyMs ?? dbCfg.queryLatencyMs ?? 30;
             const writeMean = rawWrite ?? dbCfg.writeQueryLatencyMs ?? dbCfg.queryLatencyMs ?? 60;
-            const meanLatency = req.kind === 'write' ? writeMean : readMean;
+            const dbCostMult = req.trafficClass?.costMultiplier ?? 1.0;
+            let meanLatency = (req.kind === 'write' ? writeMean : readMean) * dbCostMult;
+
+            // Database Sharding
+            const shardCount = dbCfg.shardCount ?? 1;
+            if (shardCount > 1) {
+              let shardIndex = 0;
+              if (dbCfg.shardKeyDistribution === 'zipf-skewed') {
+                const probs = calculateZipfWeights(shardCount, dbCfg.zipfSkew ?? 1.2);
+                const roll = db.rng.next();
+                let cum = 0;
+                for (let i = 0; i < probs.length; i++) {
+                  cum += probs[i]!;
+                  if (roll < cum) {
+                    shardIndex = i;
+                    break;
+                  }
+                }
+              } else {
+                shardIndex = Math.floor(db.rng.next() * shardCount);
+              }
+              shardLoads[shardIndex] = (shardLoads[shardIndex] ?? 0) + 1;
+
+              const baseShardCap = Math.max(1, Math.floor(dbCfg.maxQueryThroughputQps / shardCount));
+              if (shardLoads[shardIndex]! > baseShardCap * 2) {
+                emitEvent('HOT_SHARD_SATURATED', req.id, db.id, undefined, {
+                  shardIndex,
+                  shardLoad: shardLoads[shardIndex],
+                  capacity: baseShardCap,
+                });
+              }
+
+              if (db.rng.next() < (dbCfg.crossShardQueryShare ?? 10) / 100) {
+                const penalty = dbCfg.crossShardPenaltyMultiplier ?? 1.5;
+                meanLatency = meanLatency * penalty;
+                const otherShard = (shardIndex + 1) % shardCount;
+                shardLoads[otherShard] = (shardLoads[otherShard] ?? 0) + 1;
+              }
+            }
+
             const cv = dbCfg.variabilityCv ?? 0.5;
             const mult = dbOverride?.latencyMultiplier ?? 1.0;
 
@@ -1029,6 +2376,32 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
               1,
               Math.round(sampleLognormal(meanLatency * mult, cv, db.rng))
             );
+
+            // Abstract exposure event check for high-risk injection attempts reaching DB
+            const isParameterized =
+              (node.config as AppServerConfig).hardening?.parameterizedQueries ||
+              dbCfg.hardening?.parameterizedQueries;
+            let exposureRisk = req.trafficClass?.exposureRisk;
+            if (isParameterized && typeof exposureRisk === 'number') {
+              exposureRisk = Math.min(0.01, exposureRisk * 0.01);
+            }
+
+            if (req.trafficClass?.origin === 'malicious' && typeof exposureRisk === 'number' && exposureRisk > 0) {
+              if (attackerRng.next() < exposureRisk) {
+                counters.exposureEvents = (counters.exposureEvents ?? 0) + 1;
+                const isLimited = dbCfg.hardening?.leastPrivilegeDb;
+                if (isLimited) {
+                  counters.exposureLimitedCount = (counters.exposureLimitedCount ?? 0) + 1;
+                } else {
+                  counters.exposureFullCount = (counters.exposureFullCount ?? 0) + 1;
+                }
+                emitEvent('EXPOSURE_EVENT', req.id, db.id, undefined, {
+                  scenarioId: req.trafficClass?.attackKind,
+                  exposureRisk,
+                  severity: isLimited ? 'limited' : 'full',
+                });
+              }
+            }
 
             // Check App Server to Database timeout
             const appCfg = node.config as AppServerConfig;
@@ -1074,6 +2447,17 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
             req.status = 'rejected';
             req.statusCode = 503;
             counters.rejected++;
+            if (req.trafficClass?.origin === 'malicious') {
+              if (counters.malicious) {
+                counters.malicious.rejected++;
+                counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+              }
+            } else {
+              if (counters.legitimate) {
+                counters.legitimate.rejected++;
+                counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+              }
+            }
             counters.inFlight = Math.max(0, counters.inFlight - 1);
             emitEvent('REQUEST_REJECTED', req.id, db.id, undefined, {
               reason: 'DATABASE_POOL_EXHAUSTED',
@@ -1141,8 +2525,9 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
             emitEvent('REQUEST_PROCESSING_STARTED', nextReq.id, db.id);
 
             const dbCfg = db.config as DatabaseConfig;
+            const nextCostMult = nextReq.trafficClass?.costMultiplier ?? 1.0;
             const meanLatency =
-              nextReq.kind === 'write' ? dbCfg.writeQueryLatencyMs : dbCfg.readQueryLatencyMs;
+              (nextReq.kind === 'write' ? dbCfg.writeQueryLatencyMs : dbCfg.readQueryLatencyMs) * nextCostMult;
             const cv = dbCfg.variabilityCv ?? 0.5;
             const dbOverride = nodeOverrides.get(db.id);
             const mult = dbOverride?.latencyMultiplier ?? 1.0;
@@ -1150,6 +2535,29 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
               1,
               Math.round(sampleLognormal(meanLatency * mult, cv, db.rng))
             );
+
+            // Abstract exposure event check for high-risk injection attempts reaching DB
+            const isParameterized = dbCfg.hardening?.parameterizedQueries;
+            let nextExposureRisk = nextReq.trafficClass?.exposureRisk;
+            if (isParameterized && typeof nextExposureRisk === 'number') {
+              nextExposureRisk = Math.min(0.01, nextExposureRisk * 0.01);
+            }
+            if (nextReq.trafficClass?.origin === 'malicious' && typeof nextExposureRisk === 'number' && nextExposureRisk > 0) {
+              if (attackerRng.next() < nextExposureRisk) {
+                counters.exposureEvents = (counters.exposureEvents ?? 0) + 1;
+                const isLimited = dbCfg.hardening?.leastPrivilegeDb;
+                if (isLimited) {
+                  counters.exposureLimitedCount = (counters.exposureLimitedCount ?? 0) + 1;
+                } else {
+                  counters.exposureFullCount = (counters.exposureFullCount ?? 0) + 1;
+                }
+                emitEvent('EXPOSURE_EVENT', nextReq.id, db.id, undefined, {
+                  scenarioId: nextReq.trafficClass?.attackKind,
+                  exposureRisk: nextExposureRisk,
+                  severity: isLimited ? 'limited' : 'full',
+                });
+              }
+            }
 
             scheduleInternal(simTimeMs + dbLatency, {
               type: 'DB_QUERY_COMPLETED',
@@ -1165,10 +2573,78 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         return;
       }
 
+      // Add to replication lag on writes
+      if (req.kind === 'write') {
+        for (const rep of topology.replicaNodes) {
+          const currentLag = replicaLags.get(rep.id) ?? 5;
+          replicaLags.set(rep.id, currentLag + 10);
+        }
+      }
+
       // Response travels back from Database to App Server
+      for (const pNodeId of req.path) {
+        if (pNodeId.startsWith('app-server') || pNodeId.startsWith('load-balancer')) {
+          recordCircuitBreakerOutcome(pNodeId, true);
+        }
+      }
       scheduleInternal(simTimeMs + 1, {
         type: 'RESPONSE_HOP',
         requestId: req.id,
+      });
+      return;
+    }
+
+    // 5b. Worker Background Job Completed
+    if (type === 'WORKER_JOB_COMPLETED' && nodeId) {
+      const workerNode = topology.nodes.get(nodeId);
+      if (workerNode) {
+        workerNode.busySlots = Math.max(0, workerNode.busySlots - 1);
+      }
+      const job = metadata?.job as AsyncJobItem | undefined;
+      if (job) {
+        const db = topology.databaseNode;
+        const dbWriteLatency = 25;
+        jobsWritingToDb++;
+        scheduleInternal(simTimeMs + dbWriteLatency, {
+          type: 'WORKER_DB_WRITE_COMPLETED',
+          requestId: job.requestId,
+          nodeId: db?.id ?? 'database',
+          metadata: { job },
+        });
+      }
+      dispatchAsyncWorkers();
+      return;
+    }
+
+    if (type === 'WORKER_DB_WRITE_COMPLETED') {
+      const job = metadata?.job as AsyncJobItem | undefined;
+      if (job) {
+        jobsWritingToDb = Math.max(0, jobsWritingToDb - 1);
+        totalAsyncJobsProcessed++;
+        const elapsed = simTimeMs - job.enqueuedAtMs;
+        totalJobCompletionMs += elapsed;
+        completedJobCount++;
+        emitEvent('ASYNC_JOB_PROCESSED', job.jobId, nodeId || 'database', undefined, {
+          jobCompletionLatencyMs: elapsed,
+        });
+
+        // Add to replication lag
+        for (const rep of topology.replicaNodes) {
+          const currentLag = replicaLags.get(rep.id) ?? 5;
+          replicaLags.set(rep.id, currentLag + 10);
+        }
+      }
+      return;
+    }
+
+    if (type === 'REPLICA_LAG_DRAIN_TICK') {
+      for (const [repId, curLag] of replicaLags.entries()) {
+        const drained = Math.max(5, curLag - 15);
+        replicaLags.set(repId, drained);
+      }
+      scheduleInternal(simTimeMs + 200, {
+        type: 'REPLICA_LAG_DRAIN_TICK',
+        requestId: '',
       });
       return;
     }
@@ -1199,13 +2675,43 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           requestId: req.id,
         });
       } else {
-        // Response reached Client!
+        // Response reached Client or Threat Source!
         const totalLatencyMs = Math.round((simTimeMs - req.createdAtMs) * 10) / 10;
         latencies.push(totalLatencyMs);
+
+        if (req.trafficClass?.origin === 'malicious') {
+          counters.inFlight = Math.max(0, counters.inFlight - 1);
+          if (counters.malicious) {
+            counters.malicious.inFlight = Math.max(0, counters.malicious.inFlight - 1);
+            counters.malicious.reachedTarget++;
+          }
+          if (req.statusCode >= 500) {
+            req.status = 'failed';
+            counters.failed++;
+            emitEvent('REQUEST_FAILED', req.id, 'threat-source', undefined, {
+              statusCode: req.statusCode,
+              totalLatencyMs,
+              origin: 'malicious',
+            });
+          } else {
+            req.status = 'succeeded';
+            counters.succeeded++;
+            emitEvent('RESPONSE_RECEIVED', req.id, 'threat-source', undefined, {
+              statusCode: req.statusCode,
+              totalLatencyMs,
+              origin: 'malicious',
+            });
+          }
+          return;
+        }
 
         if (req.statusCode >= 500) {
           req.status = 'failed';
           counters.failed++;
+          if (counters.legitimate) {
+            counters.legitimate.failed++;
+            counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+          }
           counters.inFlight = Math.max(0, counters.inFlight - 1);
           emitEvent('REQUEST_FAILED', req.id, topology.clientNode.id, undefined, {
             statusCode: req.statusCode,
@@ -1216,6 +2722,10 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           req.status = 'succeeded';
           req.statusCode = 200;
           counters.succeeded++;
+          if (counters.legitimate) {
+            counters.legitimate.succeeded++;
+            counters.legitimate.inFlight = Math.max(0, counters.legitimate.inFlight - 1);
+          }
           counters.inFlight = Math.max(0, counters.inFlight - 1);
 
           emitEvent('RESPONSE_RECEIVED', req.id, topology.clientNode.id, undefined, {
@@ -1270,7 +2780,69 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     counters.packetLoss = 0;
     counters.lateResponsesDiscarded = 0;
     counters.amplificationFactor = 1.0;
+    counters.legitimateSuccessRate = 100;
+    counters.attackTrafficShare = 0;
+    counters.exposureEvents = 0;
+    counters.compromisedServersCount = 0;
+    counters.dataEgressMb = 0;
+    counters.blockedMalicious = 0;
+    counters.blockedLegitimate = 0;
+    counters.defenseInspected = {};
+    counters.defenseBlockedMalicious = {};
+    counters.defenseBlockedLegitimate = {};
+    counters.autoscalingCostDollars = 0;
+    counters.activeInstancesCount = 0;
+    counters.exposureLimitedCount = 0;
+    counters.exposureFullCount = 0;
 
+    counters.legitimate = {
+      created: 0,
+      inFlight: 0,
+      succeeded: 0,
+      failed: 0,
+      rejected: 0,
+      timedOut: 0,
+      retried: 0,
+    };
+    counters.malicious = {
+      created: 0,
+      inFlight: 0,
+      reachedTarget: 0,
+      dropped: 0,
+      rejected: 0,
+      timedOut: 0,
+    };
+
+    nodeAttackStats.clear();
+    activeAttackPhases.clear();
+    quarantinedServers.clear();
+    for (const [id, node] of topology.nodes.entries()) {
+      if (node.type === 'app-server') {
+        const appCfg = node.config as AppServerConfig;
+        const asCfg = appCfg.autoscaling;
+        autoscalingStates.set(id, {
+          activeInstances: asCfg?.enabled ? Math.max(1, asCfg.minInstances ?? 1) : 1,
+          pendingInstances: 0,
+          highUtilStartTime: null,
+          cooldownUntilMs: 0,
+        });
+        circuitBreakerStates.set(id, {
+          state: 'closed',
+          windowRequests: [],
+          openedAtMs: 0,
+          halfOpenProbeCount: 0,
+          halfOpenSuccessCount: 0,
+        });
+      } else if (node.type === 'load-balancer') {
+        circuitBreakerStates.set(id, {
+          state: 'closed',
+          windowRequests: [],
+          openedAtMs: 0,
+          halfOpenProbeCount: 0,
+          halfOpenSuccessCount: 0,
+        });
+      }
+    }
     snapshotHistory.length = 0;
     activeFailures = [];
     nodeOverrides.clear();
@@ -1279,6 +2851,7 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
 
     masterRng = createPRNG(config.seed);
     trafficRng = createPRNG(masterRng.nextInt(1, 0x7fffffff));
+    attackerRng = createPRNG(masterRng.nextInt(1, 0x7fffffff));
     topology = buildTopology(config.graph, config.seed);
 
     lbBackendStates.clear();
@@ -1295,6 +2868,35 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
     initTraffic();
     initHealthChecks();
     initScenarioScript();
+
+    // Phase 9 reset
+    asyncQueueBuffer.length = 0;
+    jobsWritingToDb = 0;
+    totalAsyncJobsEnqueued = 0;
+    totalAsyncJobsProcessed = 0;
+    totalAsyncJobsDropped = 0;
+    totalAsyncJobsDeadLettered = 0;
+    totalJobCompletionMs = 0;
+    completedJobCount = 0;
+
+    replicaLags.clear();
+    staleReadsCount = 0;
+    replicaLbCounter = 0;
+    failoverState = 'normal';
+    failoverStartTimeMs = null;
+
+    for (const rep of topology.replicaNodes) {
+      replicaLags.set(rep.id, 5);
+    }
+    if (topology.replicaNodes.length > 0) {
+      scheduleInternal(200, {
+        type: 'REPLICA_LAG_DRAIN_TICK',
+        requestId: '',
+      });
+    }
+
+    const resetShardCount = (topology.databaseNode?.config as DatabaseConfig)?.shardCount ?? 1;
+    shardLoads = new Array(resetShardCount).fill(0);
   }
 
   function seek(targetTimeMs: number): SimulationSnapshot {

@@ -6,10 +6,10 @@
 
 import { create } from 'zustand';
 import {
-  createSimulation,
-  Simulation,
   SimulationCounters,
   LatencySummary,
+  createEngineClient,
+  EngineClient,
 } from '../engine';
 import { NodeRuntimeState, SimulationEvent } from '../types/runtime';
 import { GraphConfig } from '../types';
@@ -28,8 +28,10 @@ import { buildRunSummary } from '../engine/analysis/runSummary';
 import { useMetricsStore } from './metricsStore';
 import { SimulationSnapshot } from '../engine/protocol';
 import { ActiveFailure, ScenarioCommand, FailureType } from '../scenarios/failures/types';
-import { SCENARIO_PRESETS } from '../scenarios/examples/presets';
+import { ALL_PRESETS } from '../scenarios/examples/presets';
 import { useGraphStore } from './graphStore';
+import { useAttackStore } from './attackStore';
+import { useDefenseStore } from './defenseStore';
 
 export type SimulationPlayStatus = 'idle' | 'running' | 'paused' | 'completed';
 export type SimulationSpeed = 1 | 2 | 4 | 8;
@@ -85,6 +87,11 @@ export interface SimulationStoreState {
   highlightedPath: string[];
   activeSamplePackets: SamplePacket[];
   isEventLogOpen: boolean;
+
+  // Phase 10 Worker Error Reporting
+  simulationError: string | null;
+  clearSimulationError: () => void;
+  restartSimulation: (graph: GraphConfig) => void;
 
   // Actions
   play: (graph: GraphConfig) => void;
@@ -158,7 +165,7 @@ const initialTrafficConfig: TrafficConfig = {
 };
 
 // Global simulation references and ring buffers
-let activeSim: Simulation | null = null;
+let activeClient: EngineClient | null = null;
 let lastGraphVersion = -1;
 let lastUiUpdateTime = 0;
 let lastSampledSimSec = -1;
@@ -178,22 +185,36 @@ function getNodeBuffers(nodeId: string): NodeHistoryBuffers {
   return buf;
 }
 
-function getOrInitSimulation(
+function getOrInitClient(
   graph: GraphConfig,
   trafficConfig: TrafficConfig,
   seed: number,
   scenarioScript?: ScenarioCommand[]
-): Simulation {
-  if (!activeSim || lastGraphVersion !== graph.version) {
-    activeSim = createSimulation({
-      graph,
-      traffic: trafficConfig,
-      seed,
-      scenarioScript,
-    });
+): EngineClient {
+  const attackState = useAttackStore.getState();
+  const campaign = attackState.isAttackerMode ? attackState.activeCampaign : undefined;
+
+  if (!activeClient || lastGraphVersion !== graph.version) {
+    if (activeClient) {
+      activeClient.terminate();
+    }
+    activeClient = createEngineClient(
+      {
+        graph,
+        traffic: trafficConfig,
+        seed,
+        scenarioScript,
+        campaign,
+      },
+      {
+        onError: (err) => {
+          useSimulationStore.setState({ simulationError: err, status: 'paused' });
+        },
+      }
+    );
     lastGraphVersion = graph.version;
   }
-  return activeSim;
+  return activeClient;
 }
 
 export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
@@ -232,6 +253,15 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   activeSamplePackets: [],
   isEventLogOpen: false,
 
+  // Phase 10 Worker Error Reporting
+  simulationError: null,
+  clearSimulationError: () => set({ simulationError: null }),
+  restartSimulation: (graph: GraphConfig) => {
+    get().reset(graph);
+    get().play(graph);
+    set({ simulationError: null });
+  },
+
   openTrafficModal: () => set({ isTrafficModalOpen: true }),
   closeTrafficModal: () => set({ isTrafficModalOpen: false }),
 
@@ -240,7 +270,10 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   setTrafficConfig: (partial: Partial<TrafficConfig>, graph?: GraphConfig) => {
     const current = get().trafficConfig;
     const updated: TrafficConfig = { ...current, ...partial };
-    activeSim = null; // Invalidate current engine instance
+    if (activeClient) {
+      activeClient.terminate();
+      activeClient = null;
+    }
 
     const activeMode =
       updated.mode === 'auto'
@@ -324,19 +357,35 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   play: (graph: GraphConfig) => {
     const { trafficConfig, seed, status, scenarioScript } = get();
     if (status === 'paused') {
+      if (activeClient) activeClient.resume();
       set({ status: 'running' });
       return;
     }
 
-    activeSim = createSimulation({
-      graph,
-      traffic: trafficConfig,
-      seed,
-      scenarioScript,
-    });
+    const attackState = useAttackStore.getState();
+    const campaign = attackState.isAttackerMode ? attackState.activeCampaign : undefined;
+
+    if (activeClient) {
+      activeClient.terminate();
+    }
+
+    activeClient = createEngineClient(
+      {
+        graph,
+        traffic: trafficConfig,
+        seed,
+        scenarioScript,
+        campaign,
+      },
+      {
+        onError: (err) => {
+          set({ simulationError: err, status: 'paused' });
+        },
+      }
+    );
     lastGraphVersion = graph.version;
 
-    const snap = activeSim.getSnapshot();
+    const snap = activeClient.getLatestSnapshot()!;
     const activeMode = snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete');
     const displayMode = activeMode === 'aggregate' ? 'aggregate' : 'individual';
 
@@ -359,21 +408,26 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       runtimeBottleneck: snap.bottleneck ?? null,
       activeMode,
       displayMode,
+      simulationError: null,
     });
   },
 
   pause: () => {
+    if (activeClient) activeClient.pause();
     set({ status: 'paused' });
   },
 
   resume: () => {
+    if (activeClient) activeClient.resume();
     set({ status: 'running' });
   },
 
   step: (graph: GraphConfig) => {
     const { trafficConfig, seed, scenarioScript } = get();
-    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
-    const snap = sim.stepNextEvent();
+    const client = getOrInitClient(graph, trafficConfig, seed, scenarioScript);
+    client.step();
+    const snap = client.getLatestSnapshot();
+    if (!snap) return;
 
     set({
       status: snap.isDone ? 'completed' : 'paused',
@@ -390,15 +444,18 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   reset: (graph?: GraphConfig) => {
-    if (activeSim) {
-      activeSim.reset();
+    if (activeClient) {
+      activeClient.reset(graph);
     } else if (graph) {
       const { trafficConfig, seed, scenarioScript } = get();
-      activeSim = createSimulation({
+      const attackState = useAttackStore.getState();
+      const campaign = attackState.isAttackerMode ? attackState.activeCampaign : undefined;
+      activeClient = createEngineClient({
         graph,
         traffic: trafficConfig,
         seed,
         scenarioScript,
+        campaign,
       });
     }
 
@@ -411,10 +468,12 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     lastSnapshot = null;
     useMetricsStore.getState().clearMetrics();
 
+    const snap = activeClient?.getLatestSnapshot();
+
     set({
       status: 'idle',
       simTimeMs: 0,
-      runtimeNodes: activeSim ? activeSim.getSnapshot().runtimeNodes : {},
+      runtimeNodes: snap ? snap.runtimeNodes : {},
       counters: initialCounters,
       latencySummary: initialLatency,
       recentEvents: [],
@@ -428,13 +487,16 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       activeFailures: [],
       amplificationFactor: 1.0,
       narrativeEvents: [],
+      simulationError: null,
     });
   },
 
   seek: (timeMs: number, graph: GraphConfig) => {
     const { trafficConfig, seed, scenarioScript } = get();
-    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
-    const snap = sim.seek(Math.min(trafficConfig.durationMs, Math.max(0, timeMs)));
+    const client = getOrInitClient(graph, trafficConfig, seed, scenarioScript);
+    client.seek(Math.min(trafficConfig.durationMs, Math.max(0, timeMs)), graph);
+    const snap = client.getLatestSnapshot();
+    if (!snap) return;
 
     // Rebuild trace if request was tracked
     const { trackedRequestId } = get();
@@ -467,12 +529,18 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
   setSeed: (seed: number) => {
     set({ seed });
-    activeSim = null;
+    if (activeClient) {
+      activeClient.terminate();
+      activeClient = null;
+    }
   },
   randomizeSeed: () => {
     const newSeed = Math.floor(Math.random() * 999999) + 1;
     set({ seed: newSeed });
-    activeSim = null;
+    if (activeClient) {
+      activeClient.terminate();
+      activeClient = null;
+    }
   },
 
   toggleEventLog: () => set((s) => ({ isEventLogOpen: !s.isEventLogOpen })),
@@ -499,11 +567,13 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     } = get();
     if (status !== 'running') return;
 
-    const sim = getOrInitSimulation(graph, trafficConfig, seed, scenarioScript);
+    const client = getOrInitClient(graph, trafficConfig, seed, scenarioScript);
     const advanceAmount = deltaRealMs * speed;
     const targetSimTime = Math.min(trafficConfig.durationMs, simTimeMs + advanceAmount);
 
-    const snap = sim.advanceTo(targetSimTime);
+    client.advanceTo(targetSimTime);
+    const snap = client.getLatestSnapshot();
+    if (!snap) return;
 
     // If "Trace Next Request" is active, find the newest created or sampled request
     let newlyTrackedId = trackedRequestId;
@@ -536,13 +606,22 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     const isJustDone = (snap.isDone || targetSimTime >= trafficConfig.durationMs) && get().status === 'running';
     if (isJustDone) {
       const allSamples = useMetricsStore.getState().samples;
+      const prevSummary = useDefenseStore.getState().previousRunSummary;
       const runResult = buildRunSummary({
         graph,
         traffic: trafficConfig,
         seed,
         samples: allSamples,
         finalSnapshot: snap,
+        previousRunSummary: prevSummary,
       });
+      const attackState = useAttackStore.getState();
+      if (attackState.isAttackerMode) {
+        runResult.summary.isAttackRun = true;
+        runResult.summary.campaignId = attackState.activeCampaign.id;
+        runResult.summary.campaignName = attackState.activeCampaign.name;
+      }
+      useDefenseStore.getState().setPreviousRunSummary(runResult.summary);
       useMetricsStore.getState().setRunResult(runResult);
       useMetricsStore.getState().openRunSummary();
     }
@@ -668,13 +747,8 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
       durationMs,
     };
 
-    if (activeSim && activeSim.injectFailure) {
-      activeSim.injectFailure({
-        failureType,
-        targetId,
-        params,
-        durationMs,
-      });
+    if (activeClient) {
+      activeClient.injectFailure(cmd);
     }
 
     const currentScript = get().scenarioScript;
@@ -699,8 +773,11 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   removeFailure: (failureId: string) => {
-    if (activeSim && activeSim.removeFailure) {
-      activeSim.removeFailure(failureId);
+    if (activeClient) {
+      const target = get().activeFailures.find((f) => f.id === failureId);
+      if (target) {
+        activeClient.removeFailure(target.targetId, target.failureType);
+      }
     }
     set((s) => ({
       activeFailures: s.activeFailures.filter((f) => f.id !== failureId),
@@ -712,13 +789,16 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
   },
 
   loadScenarioPreset: (presetId: string, baseGraph: GraphConfig) => {
-    const preset = SCENARIO_PRESETS.find((p) => p.id === presetId);
+    const preset = ALL_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
 
     const modifiedGraph = preset.configureGraph(baseGraph);
     useGraphStore.getState().loadGraph(modifiedGraph);
 
-    activeSim = null; // Invalidate current engine instance
+    if (activeClient) {
+      activeClient.terminate();
+      activeClient = null;
+    }
 
     get().setTrafficConfig(preset.traffic, modifiedGraph);
     set({
@@ -770,3 +850,6 @@ export const selectScenarioScript = (state: SimulationStoreState) => state.scena
 export const selectActiveFailures = (state: SimulationStoreState) => state.activeFailures;
 export const selectAmplificationFactor = (state: SimulationStoreState) => state.amplificationFactor;
 export const selectNarrativeEvents = (state: SimulationStoreState) => state.narrativeEvents;
+
+// Phase 10 Selectors
+export const selectSimulationError = (state: SimulationStoreState) => state.simulationError;

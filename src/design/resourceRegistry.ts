@@ -14,7 +14,7 @@ const resourceFiles = import.meta.glob<string>('/resources/*.{png,svg}', {
 });
 
 // Alias mapping for resource filenames that might differ slightly
-const RESOURCE_ALIASES: Partial<Record<ComponentType, string[]>> = {
+const RESOURCE_ALIASES: Partial<Record<string, string[]>> = {
   router: ['router.png', 'router.svg', 'nginx-reverse-proxy.png', 'nginx-reverse-proxy.svg'],
   cache: ['cache.png', 'cache.svg', 'redis-cache.png', 'redis-cache.svg'],
   'message-queue': ['message-queue.png', 'message-queue.svg', 'kafka.png', 'kafka.svg'],
@@ -26,8 +26,11 @@ const RESOURCE_ALIASES: Partial<Record<ComponentType, string[]>> = {
   dns: ['dns.png', 'dns.svg'],
   cdn: ['cdn.png', 'cdn.svg'],
   database: ['database.png', 'database.svg'],
+  'database-replica': ['database-replica.svg', 'database-replica.png', 'read-replica.svg'],
+  worker: ['worker.svg', 'worker.png', 'async-worker.svg'],
   firewall: ['firewall.png', 'firewall.svg'],
   waf: ['waf.png', 'waf.svg'],
+  'threat-source': ['threat-source.svg', 'threat-source.png'],
 };
 
 const warnedKeys = new Set<string>();
@@ -36,7 +39,7 @@ const warnedKeys = new Set<string>();
  * Resolves an image URL for a given component type from /resources.
  * Returns null if not found (caller should render neutral placeholder icon).
  */
-export function getComponentImageUrl(type: ComponentType): string | null {
+export function getComponentImageUrl(type: ComponentType | 'threat-source'): string | null {
   const possibleNames = RESOURCE_ALIASES[type] ?? [`${type}.png`, `${type}.svg`];
 
   for (const name of possibleNames) {

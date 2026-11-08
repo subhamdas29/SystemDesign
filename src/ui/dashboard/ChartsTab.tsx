@@ -98,6 +98,58 @@ export const ChartsTab: React.FC = () => {
     return Math.max(2.0, ...chartData.retrySeries.map((p) => p.amplificationFactor));
   }, [chartData.retrySeries]);
 
+  // Multi-class attack vs legitimate series bounds
+  const attackSeries = useMemo(() => {
+    return samples.map((s) => ({
+      timeMs: s.timeMs,
+      legitRps: s.system.legitimateIncomingRps ?? s.system.incomingRps,
+      malRps: s.system.maliciousIncomingRps ?? 0,
+      attackShare: s.system.attackTrafficShare ?? 0,
+    }));
+  }, [samples]);
+
+  const maxAttackTraffic = useMemo(() => {
+    return Math.max(10, ...attackSeries.map((p) => Math.max(p.legitRps, p.malRps)));
+  }, [attackSeries]);
+
+  // Phase 9: Async Queue & Scaling series
+  const hasAsyncOrScaling = useMemo(() => {
+    return (
+      graph.nodes.some(
+        (n) =>
+          n.type === 'message-queue' ||
+          n.type === 'worker' ||
+          n.type === 'database-replica' ||
+          (n.type === 'database' && Number((n.config as Record<string, unknown>)?.shardCount ?? 1) > 1)
+      ) ||
+      samples.some(
+        (s) =>
+          (s.system.queueDepth ?? 0) > 0 ||
+          (s.system.replicationLagMs ?? 0) > 0 ||
+          (s.system.staleReadsCount ?? 0) > 0 ||
+          (s.system.consumerLagMs ?? 0) > 0
+      )
+    );
+  }, [graph.nodes, samples]);
+
+  const asyncScalingSeries = useMemo(() => {
+    return samples.map((s) => ({
+      timeMs: s.timeMs,
+      queueDepth: s.system.queueDepth ?? 0,
+      consumerLagMs: s.system.consumerLagMs ?? 0,
+      replicationLagMs: s.system.replicationLagMs ?? 0,
+      staleReads: s.system.staleReadsCount ?? 0,
+    }));
+  }, [samples]);
+
+  const maxQueueDepth = useMemo(() => {
+    return Math.max(10, ...asyncScalingSeries.map((p) => p.queueDepth));
+  }, [asyncScalingSeries]);
+
+  const maxLagMs = useMemo(() => {
+    return Math.max(50, ...asyncScalingSeries.map((p) => Math.max(p.consumerLagMs, p.replicationLagMs)));
+  }, [asyncScalingSeries]);
+
   // Current simulation time cursor X position
   const simCursorX = getX(simTimeMs);
   const hoverCursorX = hoveredTimeMs !== null ? getX(hoveredTimeMs) : null;
@@ -493,6 +545,189 @@ export const ChartsTab: React.FC = () => {
           )}
         </svg>
       </div>
+
+      {/* 6. Attacker Mode: Legitimate vs Malicious Inflow */}
+      {attackSeries.some((p) => p.malRps > 0) && (
+        <div className="p-3.5 rounded-xl bg-[#141417] border border-amber-500/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🎯</span> 6. Multi-Class Traffic (Legitimate vs Malicious)
+            </span>
+            <div className="flex items-center gap-4 text-[10px]">
+              <span className="flex items-center gap-1 text-white">
+                <span className="w-2.5 h-0.5 bg-white inline-block" /> Legitimate Inflow
+              </span>
+              <span className="flex items-center gap-1 text-amber-400">
+                <span className="w-2.5 h-0.5 bg-amber-400 border-t border-dashed border-amber-400 inline-block" /> Malicious Flood
+              </span>
+            </div>
+          </div>
+
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full h-28 cursor-crosshair overflow-visible"
+            onClick={handleChartClick}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            aria-label="Multi-Class Traffic Chart"
+          >
+            {/* Grid lines */}
+            <line x1={padding.left} y1={padding.top} x2={svgWidth - padding.right} y2={padding.top} stroke="#222226" strokeWidth={1} />
+            <line x1={padding.left} y1={padding.top + plotHeight / 2} x2={svgWidth - padding.right} y2={padding.top + plotHeight / 2} stroke="#222226" strokeWidth={1} strokeDasharray="2,2" />
+            <line x1={padding.left} y1={padding.top + plotHeight} x2={svgWidth - padding.right} y2={padding.top + plotHeight} stroke="#333338" strokeWidth={1} />
+
+            {/* Y-Axis Labels */}
+            <text x={padding.left - 6} y={padding.top + 4} fill="#71717a" fontSize={9} textAnchor="end">
+              {maxAttackTraffic.toLocaleString()}
+            </text>
+            <text x={padding.left - 6} y={padding.top + plotHeight / 2 + 3} fill="#71717a" fontSize={9} textAnchor="end">
+              {Math.round(maxAttackTraffic / 2).toLocaleString()}
+            </text>
+            <text x={padding.left - 6} y={padding.top + plotHeight} fill="#71717a" fontSize={9} textAnchor="end">
+              0
+            </text>
+
+            {/* Legitimate Inflow Line (White) */}
+            {attackSeries.length > 1 && (
+              <path
+                d={attackSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.legitRps, maxAttackTraffic).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth={1.8}
+              />
+            )}
+
+            {/* Malicious Inflow Line (Amber dashed) */}
+            {attackSeries.length > 1 && (
+              <path
+                d={attackSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.malRps, maxAttackTraffic).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth={1.8}
+                strokeDasharray="4,3"
+              />
+            )}
+
+            <line x1={simCursorX} y1={padding.top} x2={simCursorX} y2={padding.top + plotHeight} stroke="#ffffff" strokeWidth={1.5} />
+            {hoverCursorX !== null && (
+              <line x1={hoverCursorX} y1={padding.top} x2={hoverCursorX} y2={padding.top + plotHeight} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="3,3" />
+            )}
+          </svg>
+        </div>
+      )}
+
+      {/* 7. Async Queue Depth & Data Scaling */}
+      {hasAsyncOrScaling && (
+        <div className="p-3.5 rounded-xl bg-[#111113] border border-[#27272a] space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-white tracking-wide uppercase text-[11px] flex items-center gap-1.5">
+              <span>⛁</span> 7. Async Queue & Data Scaling
+            </span>
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="flex items-center gap-1 text-white">
+                <span className="w-2.5 h-0.5 bg-white inline-block" /> Queue Depth
+              </span>
+              <span className="flex items-center gap-1 text-zinc-300">
+                <span className="w-2.5 h-0.5 bg-zinc-400 border-t border-dashed border-zinc-400 inline-block" /> Consumer Lag (ms)
+              </span>
+              <span className="flex items-center gap-1 text-amber-300">
+                <span className="w-2.5 h-0.5 bg-amber-400 border-t border-dotted border-amber-400 inline-block" /> Replica Lag (ms)
+              </span>
+              <span className="flex items-center gap-1 text-rose-300">
+                <span className="w-2.5 h-0.5 bg-rose-400 border-t border-dashed border-rose-400 inline-block" /> Stale Reads
+              </span>
+            </div>
+          </div>
+
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            className="w-full h-28 cursor-crosshair overflow-visible"
+            onClick={handleChartClick}
+            onMouseMove={handleMouseMove}
+            onMouseLeave={handleMouseLeave}
+            aria-label="Async Queue Depth and Data Scaling Chart"
+          >
+            {/* Grid lines */}
+            <line x1={padding.left} y1={padding.top} x2={svgWidth - padding.right} y2={padding.top} stroke="#222226" strokeWidth={1} />
+            <line x1={padding.left} y1={padding.top + plotHeight / 2} x2={svgWidth - padding.right} y2={padding.top + plotHeight / 2} stroke="#222226" strokeWidth={1} strokeDasharray="2,2" />
+            <line x1={padding.left} y1={padding.top + plotHeight} x2={svgWidth - padding.right} y2={padding.top + plotHeight} stroke="#333338" strokeWidth={1} />
+
+            {/* Y-Axis Labels Left (Queue Depth / Count) */}
+            <text x={padding.left - 6} y={padding.top + 4} fill="#71717a" fontSize={9} textAnchor="end">
+              {maxQueueDepth.toLocaleString()}
+            </text>
+            <text x={padding.left - 6} y={padding.top + plotHeight / 2 + 3} fill="#71717a" fontSize={9} textAnchor="end">
+              {Math.round(maxQueueDepth / 2).toLocaleString()}
+            </text>
+            <text x={padding.left - 6} y={padding.top + plotHeight} fill="#71717a" fontSize={9} textAnchor="end">
+              0
+            </text>
+
+            {/* Queue Depth Line (Solid White) */}
+            {asyncScalingSeries.length > 1 && (
+              <path
+                d={asyncScalingSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.queueDepth, maxQueueDepth).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth={1.8}
+              />
+            )}
+
+            {/* Consumer Lag Line (Dashed Zinc-300) */}
+            {asyncScalingSeries.length > 1 && (
+              <path
+                d={asyncScalingSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.consumerLagMs, maxLagMs).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#d4d4d8"
+                strokeWidth={1.4}
+                strokeDasharray="4,3"
+              />
+            )}
+
+            {/* Replication Lag Line (Dotted Amber) */}
+            {asyncScalingSeries.length > 1 && (
+              <path
+                d={asyncScalingSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.replicationLagMs, maxLagMs).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#fbbf24"
+                strokeWidth={1.4}
+                strokeDasharray="2,2"
+              />
+            )}
+
+            {/* Stale Reads Line (Dashed Rose) */}
+            {asyncScalingSeries.length > 1 && (
+              <path
+                d={asyncScalingSeries
+                  .map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.timeMs).toFixed(1)} ${getY(p.staleReads, maxQueueDepth).toFixed(1)}`)
+                  .join(' ')}
+                fill="none"
+                stroke="#f43f5e"
+                strokeWidth={1.4}
+                strokeDasharray="3,3"
+              />
+            )}
+
+            {/* Live Simulation Time Cursor */}
+            <line x1={simCursorX} y1={padding.top} x2={simCursorX} y2={padding.top + plotHeight} stroke="#ffffff" strokeWidth={1.5} />
+
+            {/* Hover Crosshair */}
+            {hoverCursorX !== null && (
+              <line x1={hoverCursorX} y1={padding.top} x2={hoverCursorX} y2={padding.top + plotHeight} stroke="#a1a1aa" strokeWidth={1} strokeDasharray="3,3" />
+            )}
+          </svg>
+        </div>
+      )}
     </div>
   );
 };

@@ -8,9 +8,10 @@ import React from 'react';
 import { useUiStore, selectIsPresetModalOpen } from '../../store/uiStore';
 import { useGraphStore, selectGraph } from '../../store/graphStore';
 import { useSimulationStore } from '../../store/simulationStore';
-import { SCENARIO_PRESETS } from '../../scenarios/examples/presets';
+import { SCENARIO_PRESETS, PHASE_9_PRESETS } from '../../scenarios/examples/presets';
 
 export const ScenarioPresetsModal: React.FC = () => {
+  const [activeCategory, setActiveCategory] = React.useState<'scaling' | 'disaster'>('scaling');
   const isOpen = useUiStore(selectIsPresetModalOpen);
   const togglePresetModal = useUiStore((s) => s.togglePresetModal);
 
@@ -18,6 +19,8 @@ export const ScenarioPresetsModal: React.FC = () => {
   const loadScenarioPreset = useSimulationStore((s) => s.loadScenarioPreset);
 
   if (!isOpen) return null;
+
+  const currentPresets = activeCategory === 'scaling' ? PHASE_9_PRESETS : SCENARIO_PRESETS;
 
   const handleSelectPreset = (presetId: string) => {
     loadScenarioPreset(presetId, graph);
@@ -53,9 +56,37 @@ export const ScenarioPresetsModal: React.FC = () => {
           </button>
         </div>
 
+        {/* Category Selector Tabs */}
+        <div className="flex border-b border-[#27272a] px-5 pt-3 gap-2 bg-[#141417]">
+          <button
+            type="button"
+            onClick={() => setActiveCategory('scaling')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 flex items-center gap-1.5 ${
+              activeCategory === 'scaling'
+                ? 'border-white text-white bg-[#1c1c20]'
+                : 'border-transparent text-zinc-400 hover:text-white'
+            }`}
+          >
+            <span>⛁</span>
+            <span>Scaling & Architecture ({PHASE_9_PRESETS.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveCategory('disaster')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-b-2 flex items-center gap-1.5 ${
+              activeCategory === 'disaster'
+                ? 'border-white text-white bg-[#1c1c20]'
+                : 'border-transparent text-zinc-400 hover:text-white'
+            }`}
+          >
+            <span>🌪️</span>
+            <span>Disasters & Cascades ({SCENARIO_PRESETS.length})</span>
+          </button>
+        </div>
+
         {/* Presets Grid */}
         <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {SCENARIO_PRESETS.map((preset) => (
+          {currentPresets.map((preset) => (
             <div
               key={preset.id}
               onClick={() => handleSelectPreset(preset.id)}

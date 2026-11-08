@@ -41,6 +41,17 @@ export const FAILURE_CATALOG: Record<FailureType, FailureDefinition> = {
     severityUnit: 'x',
     defaultDurationMs: 30000,
   },
+  'db-crash': {
+    type: 'db-crash',
+    label: 'Database Crash',
+    category: 'storage',
+    targetKind: 'node',
+    targetComponentTypes: ['database'],
+    description: 'Completely crashes the primary database, triggering failover detection and replica promotion.',
+    defaultSeverity: 1,
+    severityLabel: 'Outage Severity',
+    defaultDurationMs: 30000,
+  },
   'db-slow': {
     type: 'db-slow',
     label: 'Database Slowdown',

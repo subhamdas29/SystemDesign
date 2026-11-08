@@ -8,6 +8,7 @@ import { GraphConfig } from '../../types';
 import { TrafficConfig } from '../../engine/protocol';
 import { ScenarioCommand } from '../failures/types';
 import { RETRY_PRESETS } from '../../types/components';
+import { createStarterGraph, addComponent, swapComponent } from '../../builder';
 
 export interface ScenarioPreset {
   id: string;
@@ -334,3 +335,335 @@ export const SCENARIO_PRESETS: ScenarioPreset[] = [
     },
   },
 ];
+
+export const PHASE_9_PRESETS: ScenarioPreset[] = [
+  {
+    id: 'basic-web-app',
+    title: 'Basic Web App',
+    subtitle: 'Standard 3-tier baseline architecture without async queue or replicas',
+    description:
+      'Baseline web cluster: Client -> DNS -> Load Balancer -> App Servers -> Cache -> Database. Evaluates steady-state 500 RPS traffic with 80% reads and 20% writes.',
+    educationalTakeaway:
+      'The foundational multi-tier design isolates compute from storage; in-memory caching absorbs the majority of read queries, leaving the single primary database to handle writes and cache misses.',
+    traffic: {
+      peakRps: 500,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'app-server');
+      return g;
+    },
+  },
+
+  {
+    id: 'read-heavy-replicas',
+    title: 'Read-Heavy App with Cache & Replicas',
+    subtitle: '1,200 RPS read-heavy traffic offloaded across 2 read replicas',
+    description:
+      '90% read traffic. Cache absorbs high-frequency hits; cache-miss reads are distributed across 2 read replicas via round-robin, keeping the primary database free to handle writes.',
+    educationalTakeaway:
+      'Read replicas horizontally scale query capacity for read-heavy workloads. However, replication lag can lead to stale reads if replicas cannot apply writes quickly enough.',
+    traffic: {
+      peakRps: 1200,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'app-server');
+      g = addComponent(g, 'database-replica');
+      g = addComponent(g, 'database-replica');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'client') {
+            return { ...n, config: { ...n.config, readRatio: 90 } };
+          }
+          if (n.type === 'database') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                readFromReplicasShare: 90,
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+
+  {
+    id: 'write-spike-queue',
+    title: 'Write Spike Absorbed by a Queue',
+    subtitle: '1,500 RPS write burst absorbed asynchronously into Message Queue',
+    description:
+      'A sharp spike in write traffic hits at t=10s. App Servers enqueue jobs into the Message Queue and immediately return HTTP 202 Accepted (<5ms user latency). Background workers drain the queue and persist to the database at a sustainable pace.',
+    educationalTakeaway:
+      'Asynchronous queues decouple user-perceived write latency from database ingestion throughput, acting as shock absorbers that protect databases from transient bursts.',
+    traffic: {
+      peakRps: 1500,
+      durationMs: 45000,
+      pattern: 'spike',
+      patternParams: {
+        type: 'spike',
+        baselineRps: 100,
+        spikeStartMs: 10000,
+        spikeDurationMs: 12000,
+      },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'message-queue');
+      g = addComponent(g, 'worker');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'client') {
+            return { ...n, config: { ...n.config, readRatio: 20 } };
+          }
+          if (n.type === 'app-server') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                asyncWriteShare: 90,
+                enqueueLatencyMs: 4,
+              },
+            };
+          }
+          if (n.type === 'worker') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                instances: 2,
+                concurrency: 8,
+                jobProcessingLatencyMs: 25,
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+
+  {
+    id: 'queue-falls-behind',
+    title: 'Queue That Falls Behind',
+    subtitle: 'Sustained write arrival exceeds worker capacity, causing queue overflow',
+    description:
+      'Continuous 250 RPS write traffic with an under-provisioned worker pool (max throughput ~30 RPS). Queue depth and consumer lag monotonically increase until queueLimit is breached, demonstrating queue backpressure and rejection (503).',
+    educationalTakeaway:
+      'Queues only buffer temporary spikes. If arrival rate continuously exceeds drain rate, queue depth grows unbounded and backpressure or data loss is inevitable.',
+    traffic: {
+      peakRps: 250,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'message-queue');
+      g = addComponent(g, 'worker');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'client') {
+            return { ...n, config: { ...n.config, readRatio: 10 } };
+          }
+          if (n.type === 'app-server') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                asyncWriteShare: 95,
+              },
+            };
+          }
+          if (n.type === 'message-queue') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                queueLimit: 300,
+                overflowStrategy: 'reject',
+              },
+            };
+          }
+          if (n.type === 'worker') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                instances: 1,
+                concurrency: 2,
+                jobProcessingLatencyMs: 70,
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+
+  {
+    id: 'hot-shard',
+    title: 'Hot Shard',
+    subtitle: '4 shards with Zipf key distribution saturates Shard 0 while other shards idle',
+    description:
+      'Database partitioned into 4 shards with Zipf-skewed key distribution. Shard 0 receives >60% of all queries, bottlenecking the entire cluster at RPS_max = Cap_shard / P_hot while shards 1-3 run below 15% utilization.',
+    educationalTakeaway:
+      'Non-uniform access patterns create hot shards. Adding more shards does not resolve a hot partition problem because total cluster throughput is bounded by the single most accessed shard.',
+    traffic: {
+      peakRps: 400,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'app-server');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'database') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                shardCount: 4,
+                shardKeyDistribution: 'zipf-skewed',
+                zipfSkew: 1.2,
+                maxQueryThroughputQps: 600,
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+
+  {
+    id: 'api-gateway-auth-ratelimit',
+    title: 'API Gateway with Auth and Per-Route Limits',
+    subtitle: 'API Gateway verifies tokens and throttles /api/write with HTTP 429',
+    description:
+      'API Gateway replaces Load Balancer at Slot 2. It performs token verification with a local auth cache and enforces per-route rate limits (e.g. 60 RPS on /api/write), shielding downstream App Servers from overloads.',
+    educationalTakeaway:
+      'API Gateways centralize peripheral infrastructure logic: authentication token caching prevents repeated verification overhead, and fine-grained route rate limiting prevents endpoint abuse.',
+    traffic: {
+      peakRps: 450,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      const lbNode = g.nodes.find((n) => n.type === 'load-balancer');
+      if (lbNode) {
+        g = swapComponent(g, lbNode.id, 'api-gateway');
+      }
+      g = addComponent(g, 'app-server');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'api-gateway') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                authEnabled: true,
+                authLatencyMs: 6,
+                authCacheHitRatio: 85,
+                routeRateLimits: {
+                  '/api/write': 60,
+                  '/api/auth': 40,
+                },
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+
+  {
+    id: 'primary-failover',
+    title: 'Primary Failure and Failover',
+    subtitle: 'Primary DB crashes at t=15s; healthy replica promoted after detection window',
+    description:
+      'Cluster with primary database and 2 read replicas. At t=15s, primary database crashes. During the detection (3s) and promotion (2s) window, write operations fail. Once promoted, writes automatically resume on the promoted replica.',
+    educationalTakeaway:
+      'High-availability database setups require health detection and leader election before failover completes, resulting in an unavoidable brief write outage window.',
+    traffic: {
+      peakRps: 250,
+      durationMs: 45000,
+      pattern: 'constant',
+      patternParams: { type: 'constant' },
+      mode: 'discrete',
+    },
+    scenarioScript: [
+      {
+        t: 15000,
+        action: 'inject',
+        failureType: 'db-crash',
+        targetId: 'database-1',
+        durationMs: 25000,
+        params: {},
+      },
+    ],
+    configureGraph: () => {
+      let g = createStarterGraph();
+      g = addComponent(g, 'load-balancer');
+      g = addComponent(g, 'database-replica');
+      g = addComponent(g, 'database-replica');
+      return {
+        ...g,
+        nodes: g.nodes.map((n) => {
+          if (n.type === 'database') {
+            return {
+              ...n,
+              config: {
+                ...n.config,
+                autoFailoverEnabled: true,
+                failoverDetectionMs: 3000,
+                failoverPromotionMs: 2000,
+              },
+            };
+          }
+          return n;
+        }),
+      };
+    },
+  },
+];
+
+export const ALL_PRESETS: ScenarioPreset[] = [...SCENARIO_PRESETS, ...PHASE_9_PRESETS];

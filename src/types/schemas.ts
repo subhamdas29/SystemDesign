@@ -5,6 +5,28 @@
 
 import { z } from 'zod';
 import { COMPONENT_TYPES, ComponentType } from './components';
+import { WorkloadRouteSchema } from './routes';
+import {
+  FirewallConfigSchema,
+  WafConfigSchema,
+  RateLimiterConfigSchema,
+  CdnConfigSchema,
+  AutoscalingPolicySchema,
+  CircuitBreakerPolicySchema,
+  ConnectionLimitsConfigSchema,
+  HardeningOptionsSchema,
+} from './defenses';
+
+export {
+  FirewallConfigSchema,
+  WafConfigSchema,
+  RateLimiterConfigSchema,
+  CdnConfigSchema,
+  AutoscalingPolicySchema,
+  CircuitBreakerPolicySchema,
+  ConnectionLimitsConfigSchema,
+  HardeningOptionsSchema,
+};
 
 export const ComponentTypeSchema = z.enum(COMPONENT_TYPES);
 
@@ -30,8 +52,10 @@ export const ClientConfigSchema = z.object({
     .number({ error: 'RPS must be a number' })
     .min(1, 'RPS must be at least 1 req/s')
     .max(1000000, 'RPS cannot exceed 1,000,000 req/s'),
+  uniqueUsers: z.number().int().min(1).max(1000000).optional(),
   variabilityCv: z.number().min(0).max(5).optional(),
   retryPolicy: RetryPolicySchema.optional(),
+  routes: z.array(WorkloadRouteSchema).optional(),
 });
 
 export const DnsConfigSchema = z.object({
@@ -92,6 +116,8 @@ export const LoadBalancerConfigSchema = z.object({
   variabilityCv: z.number().min(0).max(5).optional(),
   retryPolicy: RetryPolicySchema.optional(),
   perBackendWeights: z.record(z.string(), z.number().min(1).max(100)).optional(),
+  circuitBreaker: CircuitBreakerPolicySchema.optional(),
+  connectionLimits: ConnectionLimitsConfigSchema.optional(),
 });
 
 export const AppServerConfigSchema = z.object({
@@ -125,10 +151,17 @@ export const AppServerConfigSchema = z.object({
   health: z.enum(['healthy', 'degraded', 'down'], {
     error: 'Health must be healthy, degraded, or down',
   }),
+  instances: z.number().int().min(1).max(10).optional(),
   databaseTimeoutMs: z.number().min(50).max(60000).optional(),
   cacheTimeoutMs: z.number().min(10).max(30000).optional(),
   variabilityCv: z.number().min(0).max(5).optional(),
   retryPolicy: RetryPolicySchema.optional(),
+  autoscaling: AutoscalingPolicySchema.optional(),
+  circuitBreaker: CircuitBreakerPolicySchema.optional(),
+  connectionLimits: ConnectionLimitsConfigSchema.optional(),
+  hardening: HardeningOptionsSchema.optional(),
+  asyncWriteShare: z.number().min(0).max(100).optional(),
+  enqueueLatencyMs: z.number().min(0).max(1000).optional(),
 });
 
 export const CacheConfigSchema = z.object({
@@ -179,48 +212,71 @@ export const DatabaseConfigSchema = z.object({
     .min(1, 'Write latency must be at least 1 ms')
     .max(5000, 'Write latency cannot exceed 5,000 ms'),
   variabilityCv: z.number().min(0).max(5).optional(),
+  hardening: HardeningOptionsSchema.optional(),
+  readFromReplicasShare: z.number().min(0).max(100).optional(),
+  replicationApplyRate: z.number().min(1).max(100000).optional(),
+  stalenessThresholdMs: z.number().min(0).max(60000).optional(),
+  failover: z
+    .object({
+      enabled: z.boolean(),
+      detectionMs: z.number().min(100).max(60000),
+      promotionMs: z.number().min(100).max(60000),
+    })
+    .optional(),
+  shardCount: z.number().int().min(1).max(8).optional(),
+  shardKeyDistribution: z.enum(['uniform', 'zipf-skewed']).optional(),
+  zipfSkew: z.number().min(0.1).max(5).optional(),
+  crossShardQueryShare: z.number().min(0).max(100).optional(),
+  crossShardPenaltyMultiplier: z.number().min(1).max(10).optional(),
 });
 
-// Stubs for remaining components
-export const CdnConfigSchema = z.object({
-  capacityRps: z.number().min(10),
-  processingLatencyMs: z.number().min(0.1),
-  hitRatio: z.number().min(0).max(100),
-  cacheTtlSeconds: z.number().min(1),
+export const ApiGatewayPerRouteLimitSchema = z.object({
+  routeId: z.string().min(1),
+  limitRps: z.number().min(1),
+  scope: z.enum(['per-source', 'global']),
 });
 
-export const FirewallConfigSchema = z.object({
-  capacityRps: z.number().min(10),
-  processingLatencyMs: z.number().min(0.1),
-  dropRate: z.number().min(0).max(100),
-});
-
-export const WafConfigSchema = z.object({
-  capacityRps: z.number().min(10),
-  processingLatencyMs: z.number().min(0.1),
-  inspectionDepthMs: z.number().min(0),
-  blockMaliciousOnly: z.boolean(),
-});
-
-export const RateLimiterConfigSchema = z.object({
-  capacityRps: z.number().min(10),
-  processingLatencyMs: z.number().min(0.1),
-  maxTokens: z.number().min(1),
-  refillRatePerSec: z.number().min(1),
+export const ApiGatewayResponseCachingSchema = z.object({
+  enabled: z.boolean(),
+  ttlSeconds: z.number().min(1),
+  cacheableRoutes: z.array(z.string()),
 });
 
 export const ApiGatewayConfigSchema = z.object({
   capacityRps: z.number().min(10),
   processingLatencyMs: z.number().min(0.1),
-  rateLimitEnabled: z.boolean(),
-  authValidationMs: z.number().min(0),
+  backendAlgorithm: z.enum(['round-robin', 'weighted-round-robin', 'least-connections', 'random']),
+  authEnabled: z.boolean(),
+  authLatencyMs: z.number().min(0),
+  authCacheHitRatio: z.number().min(0).max(100),
+  perRouteLimits: z.array(ApiGatewayPerRouteLimitSchema),
+  upstreamTimeoutMs: z.number().min(100),
+  retryPolicy: RetryPolicySchema,
+  responseCaching: ApiGatewayResponseCachingSchema,
+  circuitBreaker: CircuitBreakerPolicySchema.optional(),
+  connectionLimits: ConnectionLimitsConfigSchema.optional(),
 });
 
 export const MessageQueueConfigSchema = z.object({
   capacityRps: z.number().min(10),
   processingLatencyMs: z.number().min(0.1),
   maxQueueDepth: z.number().min(1),
-  retentionHours: z.number().min(1),
+  enqueueLatencyMs: z.number().min(0),
+  retentionSeconds: z.number().min(1),
+  overflowBehavior: z.enum(['reject', 'drop-oldest']),
+});
+
+export const WorkerConfigSchema = z.object({
+  instances: z.number().int().min(1).max(10),
+  concurrency: z.number().int().min(1).max(100),
+  avgProcessingMs: z.number().min(1),
+  maxRetries: z.number().int().min(0).max(10),
+  writeCostToDatabase: z.number().min(0).max(10),
+});
+
+export const DatabaseReplicaConfigSchema = z.object({
+  capacityQps: z.number().min(10),
+  queryLatencyMs: z.number().min(1),
 });
 
 export const CONFIG_SCHEMAS: Record<ComponentType, z.ZodTypeAny> = {
@@ -237,6 +293,8 @@ export const CONFIG_SCHEMAS: Record<ComponentType, z.ZodTypeAny> = {
   'rate-limiter': RateLimiterConfigSchema,
   'api-gateway': ApiGatewayConfigSchema,
   'message-queue': MessageQueueConfigSchema,
+  worker: WorkerConfigSchema,
+  'database-replica': DatabaseReplicaConfigSchema,
 };
 
 /**
@@ -260,7 +318,7 @@ export function validateNodeConfig(
   return { valid: false, errors };
 }
 
-export const AnyConfigSchema = z.record(z.string(), z.unknown());
+export const AnyConfigSchema = z.any();
 
 export const GraphNodeSchema = z.object({
   id: z.string().min(1),
@@ -280,7 +338,7 @@ export const GraphEdgeSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1),
   target: z.string().min(1),
-  kind: z.enum(['request', 'replication']),
+  kind: z.enum(['request', 'async', 'replication']),
   isLookup: z.boolean().optional(),
   latency: EdgeLatencyConfigSchema.optional(),
 });

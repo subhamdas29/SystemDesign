@@ -13,6 +13,7 @@ import { formatRps, formatPercent } from '../../design/formatters';
 
 export const InspectorPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'config' | 'live'>('live');
+  const [showComponentExplanation, setShowComponentExplanation] = useState(false);
   const graph = useGraphStore(selectGraph);
   const nodes = useGraphStore(selectNodes);
   const removeNode = useGraphStore((s) => s.removeNode);
@@ -141,6 +142,21 @@ export const InspectorPanel: React.FC = () => {
                 <div className="text-xs font-mono text-[var(--color-text-muted)] truncate mt-0.5">
                   ID: {selectedNode.id}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowComponentExplanation(!showComponentExplanation)}
+                  className="mt-1.5 text-[11px] text-neutral-300 hover:text-white flex items-center gap-1 font-medium underline decoration-dotted"
+                >
+                  <span>💡 Explain this component</span>
+                </button>
+                {showComponentExplanation && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-[#111113] border border-[#3f3f46] text-xs text-neutral-300 space-y-1 animate-in fade-in">
+                    <p className="font-semibold text-white">{rule?.label || selectedNode.type}</p>
+                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+                      {rule?.whyHere || 'Core building block in modern distributed system architecture.'}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

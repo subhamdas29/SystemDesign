@@ -31,6 +31,8 @@ const PLACEHOLDER_LABELS: Record<string, string> = {
   'app-server': 'APP',
   cache: 'MEM',
   database: 'DB',
+  worker: 'WRK',
+  'database-replica': 'REP',
 };
 
 export const ComponentIcon: React.FC<ComponentIconProps> = ({
