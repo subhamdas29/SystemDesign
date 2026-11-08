@@ -1,0 +1,42 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check (TypeScript)
+        run: npm run typecheck
+
+      - name: Lint Codebase (ESLint)
+        run: npm run lint
+
+      - name: Check Resource Assets
+        run: npm run check:resources
+
+      - name: Run Test Suite (Vitest)
+        run: npm test
+
+      - name: Run Performance Benchmarks
+        run: npm run bench
+
+      - name: Build Production Bundle
+        run: npm run build
