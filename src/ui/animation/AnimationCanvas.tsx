@@ -53,10 +53,14 @@ export const AnimationCanvas: React.FC = () => {
   const peakRps = useSimulationStore(selectSimRps);
   const trackedRequestId = useSimulationStore(selectTrackedRequestId);
   const followTrackedPacket = useSimulationStore(selectFollowTrackedPacket);
-  const trackRequest = useSimulationStore((s) => s.trackRequest);
 
   // Readout state
   const [readout, setReadout] = React.useState({ drawn: 0, inFlight: 0 });
+
+  // Phase 10: Adaptive Quality Control
+  const [isAdaptiveQualityActive, setIsAdaptiveQualityActive] = React.useState(false);
+  const [isAdaptiveQualityDisabledByUser, setIsAdaptiveQualityDisabledByUser] = React.useState(false);
+  const overBudgetStartTimeRef = useRef<number | null>(null);
 
   // Flow particles pool for Aggregate Flow mode
   const flowParticlesRef = useRef<Map<string, FlowParticle[]>>(new Map());
@@ -80,6 +84,15 @@ export const AnimationCanvas: React.FC = () => {
 
   const getNodeHandles = useCallback(
     (nodeId: string): { input: Point2D; output: Point2D; center: Point2D } | null => {
+      if (nodeId === 'threat-source') {
+        const clientPos = layout['client'] ?? { x: 0, y: 0 };
+        const pos = { x: clientPos.x, y: clientPos.y + 160 };
+        return {
+          input: { x: pos.x, y: pos.y + nodeHeight / 2 },
+          output: { x: pos.x + nodeWidth, y: pos.y + nodeHeight / 2 },
+          center: { x: pos.x + nodeWidth / 2, y: pos.y + nodeHeight / 2 },
+        };
+      }
       const pos = layout[nodeId];
       if (!pos) return null;
       return {
@@ -116,6 +129,7 @@ export const AnimationCanvas: React.FC = () => {
     let animId: number;
 
     const render = () => {
+      const frameStart = performance.now();
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
@@ -134,6 +148,8 @@ export const AnimationCanvas: React.FC = () => {
       const recentEvents = useSimulationStore.getState().recentEvents;
       const currentTrackedId = useSimulationStore.getState().trackedRequestId;
       const isReducedMotion = prefersReducedMotionRef.current;
+      const currentCap = isAdaptiveQualityActive ? 80 : MAX_DRAWN_PACKETS;
+      const shouldDrawTrails = !isReducedMotion && !isAdaptiveQualityActive;
 
       // 1. Build In-Flight Packet Candidates from recent events
       const candidatePackets: AnimatedPacket[] = [];
@@ -151,11 +167,17 @@ export const AnimationCanvas: React.FC = () => {
           const progress = calculatePacketProgress(simTimeMs, ev.timestamp, ev.timestamp + hopDurationMs);
 
           let state: PacketVisualState = 'forward';
-          if (ev.type === 'RESPONSE_FORWARDED') {
+          if (
+            ev.details?.origin === 'malicious' ||
+            ev.nodeId === 'threat-source' ||
+            ev.targetNodeId === 'threat-source'
+          ) {
+            state = 'malicious';
+          } else if (ev.type === 'RESPONSE_FORWARDED') {
             state = 'response';
           } else if (ev.type === 'REQUEST_QUEUED') {
             state = 'queued';
-          } else if (ev.type === 'REQUEST_REJECTED') {
+          } else if (ev.type === 'REQUEST_REJECTED' || ev.type === 'REQUEST_BLOCKED') {
             state = 'rejected';
           } else if (ev.type === 'REQUEST_FAILED') {
             state = 'failed';
@@ -164,6 +186,14 @@ export const AnimationCanvas: React.FC = () => {
           } else if (ev.type === 'RESPONSE_RECEIVED') {
             state = 'success';
           }
+
+          const isAsyncJob =
+            ev.details?.isAsyncJob === true ||
+            ev.type === 'ASYNC_JOB_ENQUEUED' ||
+            ev.type === 'ASYNC_JOB_PROCESSED' ||
+            ev.targetNodeId === 'message-queue' ||
+            ev.targetNodeId === 'worker' ||
+            ev.nodeId === 'worker';
 
           candidatePackets.push({
             id: `pkt-${ev.id}`,
@@ -174,15 +204,16 @@ export const AnimationCanvas: React.FC = () => {
             state,
             isTracked: ev.requestId === currentTrackedId,
             isSampled: ev.details?.sampled === true,
+            isAsyncJob,
             timestamp: ev.timestamp,
           });
         }
       }
 
-      // 2. Select Packets under Concurrency Cap (Default 200)
+      // 2. Select Packets under Concurrency Cap (Default 200, 80 if adaptive)
       const { visiblePackets, totalInFlight } = selectPacketsUnderCap(
         candidatePackets,
-        MAX_DRAWN_PACKETS,
+        currentCap,
         currentTrackedId
       );
 
@@ -262,8 +293,8 @@ export const AnimationCanvas: React.FC = () => {
         ctx.save();
         ctx.globalAlpha = isDimmed ? 0.25 : 1.0;
 
-        // Render trails unless prefers-reduced-motion
-        if (!isReducedMotion && pkt.state === 'forward' && pkt.progress > 0.05) {
+        // Render trails unless prefers-reduced-motion or adaptive quality active
+        if (shouldDrawTrails && pkt.state === 'forward' && pkt.progress > 0.05) {
           for (let t = 1; t <= TRAIL_LENGTH; t++) {
             const trailProg = Math.max(0, pkt.progress - t * 0.05);
             const trailPos = interpolatePoint(startPt, endPt, trailProg);
@@ -309,13 +340,35 @@ export const AnimationCanvas: React.FC = () => {
           ctx.globalAlpha = 0.4;
           ctx.fill();
         } else if (pkt.state === 'malicious') {
-          // Reserved code path for Phase 7 malicious traffic
+          // Amber diamond shape for malicious attack traffic
+          const s = 5;
           ctx.beginPath();
-          ctx.arc(currentPos.x, currentPos.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(245, 158, 11, 0.8)';
+          ctx.moveTo(currentPos.x, currentPos.y - s);
+          ctx.lineTo(currentPos.x + s, currentPos.y);
+          ctx.lineTo(currentPos.x, currentPos.y + s);
+          ctx.lineTo(currentPos.x - s, currentPos.y);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.25)';
+          ctx.fill();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.5;
           ctx.shadowColor = 'rgba(245, 158, 11, 0.6)';
           ctx.shadowBlur = 8;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        } else if (pkt.isAsyncJob) {
+          // Hollow square for async jobs
+          const s = isTracked ? 9 : 7;
+          ctx.beginPath();
+          ctx.rect(currentPos.x - s / 2, currentPos.y - s / 2, s, s);
+          ctx.fillStyle = '#18181b';
           ctx.fill();
+          ctx.strokeStyle = '#e4e4e7';
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = '#ffffff';
+          ctx.shadowBlur = isTracked ? 12 : 5;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
         } else {
           // Bright white glowing dot with silver glow
           ctx.beginPath();
@@ -341,6 +394,19 @@ export const AnimationCanvas: React.FC = () => {
       }
 
       ctx.restore();
+
+      // Measure frame budget
+      const frameDuration = performance.now() - frameStart;
+      if (frameDuration > 16.6 && !isAdaptiveQualityDisabledByUser && !isAdaptiveQualityActive) {
+        if (overBudgetStartTimeRef.current === null) {
+          overBudgetStartTimeRef.current = frameStart;
+        } else if (frameStart - overBudgetStartTimeRef.current > 3000) {
+          setIsAdaptiveQualityActive(true);
+        }
+      } else if (frameDuration <= 16.6) {
+        overBudgetStartTimeRef.current = null;
+      }
+
       animId = requestAnimationFrame(render);
     };
 
@@ -362,51 +428,18 @@ export const AnimationCanvas: React.FC = () => {
     setCenter,
     readout.inFlight,
     readout.drawn,
+    isAdaptiveQualityActive,
+    isAdaptiveQualityDisabledByUser,
   ]);
-
-  // Click canvas packet to select and trace
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-
-    // Transform screen click coordinate to canvas coordinate
-    const clickX = (e.clientX - rect.left - vpX) / zoom;
-    const clickY = (e.clientY - rect.top - vpY) / zoom;
-
-    const recentEvents = useSimulationStore.getState().recentEvents;
-    const simTimeMs = useSimulationStore.getState().simTimeMs;
-
-    for (const ev of recentEvents.slice(-100)) {
-      if (!ev.targetNodeId) continue;
-      const srcHandles = getNodeHandles(ev.nodeId);
-      const tgtHandles = getNodeHandles(ev.targetNodeId);
-      if (!srcHandles || !tgtHandles) continue;
-
-      const progress = calculatePacketProgress(simTimeMs, ev.timestamp, ev.timestamp + 25);
-      const isReturn = ev.type === 'RESPONSE_FORWARDED';
-      const startPt = isReturn ? srcHandles.input : srcHandles.output;
-      const endPt = isReturn ? tgtHandles.output : tgtHandles.input;
-      const pt = interpolatePoint(startPt, endPt, progress);
-
-      // Hit test radius: 14px in flow coordinates
-      const dist = Math.hypot(clickX - pt.x, clickY - pt.y);
-      if (dist < 14) {
-        trackRequest(ev.requestId, graph);
-        break;
-      }
-    }
-  };
 
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 w-full h-full pointer-events-auto z-10 overflow-hidden"
+      className="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-hidden"
     >
       <canvas
         ref={canvasRef}
-        onClick={handleCanvasClick}
-        className="w-full h-full cursor-crosshair"
+        className="w-full h-full pointer-events-none"
       />
 
       {/* Persistent Readout: Conflation Prevention Badge */}
@@ -424,6 +457,30 @@ export const AnimationCanvas: React.FC = () => {
             : `Showing ${readout.drawn} in-flight`}
         </span>
       </div>
+
+      {/* Non-intrusive Adaptive Quality Banner */}
+      {isAdaptiveQualityActive && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute top-3 right-4 z-20 pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#18181b]/95 backdrop-blur-md border border-neutral-600 text-xs shadow-lg animate-in fade-in"
+        >
+          <span className="text-neutral-300">⚡</span>
+          <span className="text-white font-medium text-[11px]">
+            Adaptive quality active (cap 80, trails disabled)
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setIsAdaptiveQualityActive(false);
+              setIsAdaptiveQualityDisabledByUser(true);
+            }}
+            className="ml-2 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold transition-colors"
+          >
+            Disable
+          </button>
+        </div>
+      )}
     </div>
   );
 };

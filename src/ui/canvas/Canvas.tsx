@@ -17,6 +17,7 @@ import { AnimationCanvas } from '../animation/AnimationCanvas';
 import { useGraphStore, selectGraph, selectNodes, selectEdges } from '@store';
 import { useUiStore, selectDraggingSwapNodeId } from '@store';
 import { useSimulationStore, selectHighlightedPath } from '@store';
+import { useAttackStore } from '@store';
 import { computeLayout, COMPONENT_RULES, canSwap } from '@builder';
 import { ComponentType } from '@types';
 
@@ -39,8 +40,9 @@ const CanvasInner: React.FC = () => {
   const setDraggingSwapNodeId = useUiStore((s) => s.setDraggingSwapNodeId);
   const draggingSwapNodeId = useUiStore(selectDraggingSwapNodeId);
   const highlightedPath = useSimulationStore(selectHighlightedPath);
+  const isAttackerMode = useAttackStore((s) => s.isAttackerMode);
 
-  const { fitView } = useReactFlow();
+  const { fitView, getViewport } = useReactFlow();
   const initialFitDone = useRef(false);
 
   // Compute deterministic layout positions
@@ -48,7 +50,7 @@ const CanvasInner: React.FC = () => {
 
   // Convert graph config nodes into React Flow nodes
   const flowNodes: Node[] = useMemo(() => {
-    return rawNodes.map((node) => {
+    const regularNodes: Node[] = rawNodes.map((node) => {
       const pos = layout[node.id] ?? { x: 0, y: 0 };
       const rule = COMPONENT_RULES[node.type];
       const isSwappable = Boolean(rule?.swapGroup);
@@ -62,11 +64,33 @@ const CanvasInner: React.FC = () => {
         selectable: true,
       };
     });
-  }, [rawNodes, layout]);
+
+    if (isAttackerMode) {
+      // Find client node position to position Threat Sources node in parallel tier
+      const clientNode = rawNodes.find((n) => n.type === 'client');
+      const clientPos = clientNode ? layout[clientNode.id] ?? { x: 0, y: 0 } : { x: 0, y: 0 };
+      regularNodes.push({
+        id: 'threat-source',
+        type: 'custom',
+        position: { x: clientPos.x, y: clientPos.y + 160 },
+        data: {
+          id: 'threat-source',
+          type: 'threat-source',
+          label: 'Threat Sources',
+          config: {},
+          isVirtual: true,
+        } as unknown as Record<string, unknown>,
+        draggable: false,
+        selectable: true,
+      });
+    }
+
+    return regularNodes;
+  }, [rawNodes, layout, isAttackerMode]);
 
   // Convert graph config edges into React Flow edges
   const flowEdges: Edge[] = useMemo(() => {
-    return rawEdges.map((edge) => ({
+    const regularEdges: Edge[] = rawEdges.map((edge) => ({
       id: edge.id,
       source: edge.source,
       target: edge.target,
@@ -74,17 +98,54 @@ const CanvasInner: React.FC = () => {
       data: {
         isLookup: edge.isLookup,
         latency: edge.latency,
+        kind: edge.kind,
         source: edge.source,
         target: edge.target,
       },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: '#d4d4d4',
-        width: 16,
-        height: 16,
+        color: edge.kind === 'async' ? '#e4e4e7' : '#d4d4d4',
+        width: edge.kind === 'async' ? 18 : 16,
+        height: edge.kind === 'async' ? 18 : 16,
       },
     }));
-  }, [rawEdges]);
+
+    if (isAttackerMode) {
+      // Direct edge from Threat Sources to the entry point
+      const clientEdge = rawEdges.find((e) => e.source === 'client' && !e.isLookup);
+      const targetId =
+        clientEdge?.target ||
+        rawNodes.find(
+          (n) =>
+            n.type === 'router' ||
+            n.type === 'load-balancer' ||
+            n.type === 'api-gateway' ||
+            n.type === 'app-server'
+        )?.id;
+      if (targetId) {
+        regularEdges.push({
+          id: 'edge-threat-source-entry',
+          source: 'threat-source',
+          target: targetId,
+          type: 'custom',
+          data: {
+            source: 'threat-source',
+            target: targetId,
+            isThreatEdge: true,
+          },
+          style: { stroke: '#f59e0b', strokeDasharray: '5,5' },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#f59e0b',
+            width: 16,
+            height: 16,
+          },
+        });
+      }
+    }
+
+    return regularEdges;
+  }, [rawEdges, isAttackerMode, rawNodes]);
 
   // Fit view on load, whenever graph structure changes, and on window resize
   useEffect(() => {
@@ -175,9 +236,50 @@ const CanvasInner: React.FC = () => {
         nodesDraggable={true} // restricted per-node via node.draggable
         nodesConnectable={false}
         elementsSelectable={true}
-        onPaneClick={() => {
+        panOnDrag={true}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
+        panOnScroll={false}
+        preventScrolling={true}
+        minZoom={0.2}
+        maxZoom={2.5}
+        onPaneClick={(event) => {
           selectNode(null);
           selectEdge(null);
+
+          // Check if user clicked an in-flight packet
+          const target = event.currentTarget as HTMLElement | null;
+          if (target) {
+            const rect = target.getBoundingClientRect();
+            const { x: vpX, y: vpY, zoom } = getViewport();
+            const clickX = (event.clientX - rect.left - vpX) / zoom;
+            const clickY = (event.clientY - rect.top - vpY) / zoom;
+
+            const recentEvents = useSimulationStore.getState().recentEvents;
+            const simTimeMs = useSimulationStore.getState().simTimeMs;
+
+            for (const ev of recentEvents.slice(-100)) {
+              if (!ev.targetNodeId) continue;
+              const srcPos = layout[ev.nodeId];
+              const tgtPos = layout[ev.targetNodeId];
+              if (!srcPos || !tgtPos) continue;
+
+              const progress = Math.min(1.0, Math.max(0.0, (simTimeMs - ev.timestamp) / 25));
+              const isReturn = ev.type === 'RESPONSE_FORWARDED';
+              const startPt = isReturn ? { x: srcPos.x + 100, y: srcPos.y + 40 } : { x: srcPos.x + 200, y: srcPos.y + 40 };
+              const endPt = isReturn ? { x: tgtPos.x + 200, y: tgtPos.y + 40 } : { x: tgtPos.x, y: tgtPos.y + 40 };
+              const pt = {
+                x: startPt.x + (endPt.x - startPt.x) * progress,
+                y: startPt.y + (endPt.y - startPt.y) * progress,
+              };
+
+              const dist = Math.hypot(clickX - pt.x, clickY - pt.y);
+              if (dist < 18) {
+                useSimulationStore.getState().trackRequest(ev.requestId, graph);
+                break;
+              }
+            }
+          }
         }}
         onNodeClick={(_, node) => {
           selectNode(node.id);
@@ -189,8 +291,6 @@ const CanvasInner: React.FC = () => {
         }}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragStop={handleNodeDragStop}
-        minZoom={0.5}
-        maxZoom={1.8}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#26262b" gap={24} size={1.5} />
