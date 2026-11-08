@@ -1,0 +1,33 @@
+[
+  {
+    "name": "1M RPS 10-Min Aggregate Simulation",
+    "target": "< 2,000 ms wall-clock",
+    "actual": "111.4 ms (600.1M requests)",
+    "passed": true,
+    "notes": "Mode: aggregate, Succeeded: 306953067"
+  },
+  {
+    "name": "1,000 RPS 10-Sec Discrete Simulation",
+    "target": "< 500 ms wall-clock",
+    "actual": "179.0 ms (9951 requests processed)",
+    "passed": true
+  },
+  {
+    "name": "Memory Boundedness (10-min run)",
+    "target": "< 50 MB net heap growth",
+    "actual": "1.20 MB net growth",
+    "passed": true
+  },
+  {
+    "name": "Engine Adapter Dispatch Latency",
+    "target": "< 2.0 ms per advance step",
+    "actual": "0.284 ms/step (99 steps in 28.1 ms)",
+    "passed": true
+  },
+  {
+    "name": "200 Packets Frame Computation Cost",
+    "target": "< 4.0 ms per frame (60 FPS budget)",
+    "actual": "0.010 ms per frame",
+    "passed": true
+  }
+]
