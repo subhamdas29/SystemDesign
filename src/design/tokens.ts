@@ -1,84 +1,112 @@
 /**
  * Design tokens for "Life of a Request" System Design Simulator.
- * Strictly adheres to the monochrome-first silver/white & deep black palette.
- * Colors, gradients, shadows, borders, radii, fonts, and animation durations.
+ * Strictly adheres to the redesign specification derived from Figma and local comp references.
+ * Palette: Cream (#F3EEE3), Burnt Orange (#D9541E), Canvas (#0B0B0D), Monochrome neutrals.
+ * Typography: Roboto Mono across all navigation, controls, nodes, and telemetry.
  */
 
 export const tokens = {
   colors: {
+    cream: '#F3EEE3',
+    burntOrange: '#D9541E',
+    canvas: '#0B0B0D',
     bg: {
-      canvas: '#0b0b0d',
+      canvas: '#0B0B0D',
       surface: '#111113',
       panel: '#131316',
-      subtle: '#18181b',
+      subtle: '#18181B',
       active: '#222226',
-      hover: '#1c1c20',
-      dot: '#26262b',
+      hover: '#1C1C20',
+      dot: '#26262B',
+      toolbarPill: '#2C2C2C',
+      toolbarPillActive: '#656565',
+      bottomBar: '#2C2C2C',
     },
     border: {
-      subtle: '#27272a',
-      default: '#3f3f46',
-      silver: '#8e8e93',
-      silverLight: '#b8b8b8',
-      white: '#ffffff',
-      dashed: '#71717a',
+      subtle: '#27272A',
+      default: '#3F3F46',
+      silver: '#8E8E93',
+      white: '#FFFFFF',
+      orange: '#D9541E',
+      dashed: '#71717A',
     },
     text: {
-      primary: '#ffffff',
-      secondary: '#d4d4d4',
-      muted: '#a1a1aa',
-      faint: '#71717a',
+      primary: '#FFFFFF',
+      dark: '#111111',
+      secondary: '#A1A1AA',
+      muted: '#888888',
+      faint: '#71717A',
+      accentOrange: '#D9541E',
     },
     accent: {
-      silver: '#d4d4d4',
-      silverGlow: 'rgba(212, 212, 212, 0.25)',
-      silverHighlight: 'rgba(255, 255, 255, 0.4)',
-      amberAttack: 'rgba(245, 158, 11, 0.2)', // Max 20% opacity for attack/malicious traffic
-      amberAttackBorder: 'rgba(245, 158, 11, 0.5)',
+      orange: '#D9541E',
+      cream: '#F3EEE3',
+      amberAttack: 'rgba(217, 84, 30, 0.25)',
+      amberAttackBorder: '#D9541E',
     },
     status: {
-      healthy: '#f4f4f5',
-      warning: '#a1a1aa',
-      overloaded: '#e4e4e7',
-      failed: '#71717a',
+      healthy: '#008604',
+      warning: '#F59E0B',
+      overloaded: '#D9541E',
+      failed: '#EF4444',
     },
   },
-  gradients: {
-    silverBorder: 'linear-gradient(135deg, #b8b8b8 0%, #ffffff 100%)',
-    silverGlow: 'radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, rgba(17, 17, 19, 0) 70%)',
-    nodeSurface: 'linear-gradient(180deg, #161619 0%, #111113 100%)',
-    headerSurface: 'linear-gradient(180deg, #141417 0%, #0d0d0f 100%)',
+  typography: {
+    fontFamily: "'Roboto Mono', Menlo, Consolas, monospace",
+    nav: {
+      fontSize: '16px',
+      fontWeight: 700,
+    },
+    secondBar: {
+      fontSize: '11px',
+      fontWeight: 500,
+    },
+    canvasLabel: {
+      fontSize: '12px',
+      fontWeight: 400,
+      lineHeight: '1.25',
+    },
+    canvasUtilization: {
+      fontSize: '10px',
+      fontWeight: 400,
+    },
+    healthIndicator: {
+      fontSize: '11px',
+      fontWeight: 400,
+    },
   },
-  shadows: {
-    soft: '0 4px 12px rgba(0, 0, 0, 0.6)',
-    glow: '0 0 15px rgba(212, 212, 212, 0.22)',
-    glowHover: '0 0 22px rgba(255, 255, 255, 0.35)',
-    glowSelected: '0 0 25px rgba(255, 255, 255, 0.45)',
-    glowValidTarget: '0 0 20px rgba(255, 255, 255, 0.5)',
+  fonts: {
+    ui: "'Roboto Mono', Menlo, Consolas, monospace",
+    mono: "'Roboto Mono', Menlo, Consolas, monospace",
+  },
+  dimensions: {
+    topBarHeight: 80,
+    secondBarHeight: 54,
+    bottomBarHeight: 45,
+    navIconSize: 16,
+    canvasIconSize: 48,
+    edgeWeight: 2,
+    iconStrokeWidth: 2,
   },
   radii: {
+    none: '0px',
     sm: '4px',
-    md: '8px',
-    lg: '12px',
-    xl: '16px',
+    md: '6px',
+    lg: '8px',
     full: '9999px',
   },
   spacing: {
     canvasNodeWidth: 160,
     canvasNodeHeight: 96,
-    tierGapX: 200,
-    instanceGapY: 120,
+    tierGapX: 220,
+    instanceGapY: 130,
     paddingPanel: '16px',
-  },
-  fonts: {
-    ui: 'Inter, system-ui, -apple-system, sans-serif',
-    mono: 'JetBrains Mono, Menlo, monospace',
   },
   animation: {
     fast: '150ms',
     default: '250ms',
-    smooth: '400ms',
-    layoutSpring: { stiffness: 300, damping: 28 },
+    smooth: '300ms',
+    easeOut: 'cubic-bezier(0.16, 1, 0.3, 1)',
   },
   zIndex: {
     canvas: 0,
