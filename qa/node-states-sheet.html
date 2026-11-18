@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>R2 Node States Exploration Sheet — Life of a Request</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-canvas: #0B0B0D;
+      --bg-surface: #14171E;
+      --border-subtle: #242936;
+      --cream: #F3EEE3;
+      --burnt-orange: #D9541E;
+      --text-main: #FFFFFF;
+      --text-muted: #8F96A3;
+      --font-mono: 'Roboto Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-canvas);
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      padding: 40px;
+      line-height: 1.5;
+    }
+
+    .header {
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 24px;
+      margin-bottom: 36px;
+    }
+
+    .badge-r2 {
+      display: inline-block;
+      padding: 3px 8px;
+      background: rgba(217, 84, 30, 0.15);
+      border: 1px solid var(--burnt-orange);
+      color: var(--burnt-orange);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--cream);
+      margin-bottom: 8px;
+    }
+
+    .desc {
+      color: var(--text-muted);
+      font-size: 13px;
+      max-width: 900px;
+    }
+
+    .grid-proposals {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      margin-bottom: 48px;
+    }
+
+    .proposal-col {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 24px;
+    }
+
+    .proposal-header {
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .proposal-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--cream);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .proposal-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .states-table {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+
+    .state-row {
+      display: grid;
+      grid-template-columns: 150px 180px 1fr;
+      align-items: center;
+      gap: 16px;
+      padding: 12px;
+      border: 1px dashed rgba(255, 255, 255, 0.05);
+      background: rgba(11, 11, 13, 0.5);
+    }
+
+    .state-meta {
+      font-size: 11px;
+    }
+
+    .state-name {
+      font-weight: 600;
+      color: var(--cream);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .state-indicator-rule {
+      color: var(--text-muted);
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    .node-preview-cell {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 80px;
+      position: relative;
+    }
+
+    /* Common Node structure: icon + label + utilization. NO BOX OR CARD */
+    .node-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      padding: 8px 12px;
+      transition: all 180ms ease-out;
+    }
+
+    .node-icon-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      margin-bottom: 6px;
+    }
+
+    .node-icon-wrapper svg {
+      width: 24px;
+      height: 24px;
+      stroke: var(--text-main);
+      color: var(--text-main);
+      stroke-width: 2;
+    }
+
+    .node-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-main);
+      text-align: center;
+      white-space: pre-wrap;
+      line-height: 1.2;
+    }
+
+    .node-util {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* --- PROPOSAL A: Architectural Micro-Badges & Corner Ticks (Cream Selection) --- */
+    .prop-a .node-item:hover {
+      filter: brightness(1.2);
+    }
+    .prop-a .node-item:hover .node-label {
+      text-decoration: underline;
+      text-decoration-style: dashed;
+      text-underline-offset: 3px;
+    }
+
+    .prop-a-selected {
+      position: relative;
+    }
+    .prop-a-selected::before, .prop-a-selected::after {
+      content: '';
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border: 1.5px solid var(--cream);
+      pointer-events: none;
+    }
+    .prop-a-selected::before {
+      top: -2px;
+      left: -2px;
+      border-right: none;
+      border-bottom: none;
+    }
+    .prop-a-selected::after {
+      bottom: -2px;
+      right: -2px;
+      border-left: none;
+      border-top: none;
+    }
+    .prop-a-selected .node-label::before {
+      content: '◇ ';
+      color: var(--cream);
+      font-size: 10px;
+    }
+
+    .prop-a-focus {
+      outline: 2px dotted var(--cream);
+      outline-offset: 4px;
+    }
+
+    .micro-badge-a {
+      position: absolute;
+      top: -6px;
+      right: -8px;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 3px;
+      border-radius: 2px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .badge-warn-a {
+      background: var(--burnt-orange);
+      color: #fff;
+    }
+    .badge-overload-a {
+      background: var(--burnt-orange);
+      color: #fff;
+      animation: pulseOverload 1.2s infinite ease-in-out;
+    }
+    .badge-failed-a {
+      background: #444955;
+      color: #FF5C5C;
+      border: 1px solid #FF5C5C;
+    }
+    .badge-quarantine-a {
+      background: #1A1D24;
+      color: var(--cream);
+      border: 1px dashed var(--cream);
+    }
+    .badge-degraded-a {
+      background: #2D271E;
+      color: #F5A623;
+      border: 1px solid #F5A623;
+    }
+
+    @keyframes pulseOverload {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.85; }
+    }
+
+    /* --- PROPOSAL B: Typographic Accents & Side-Pills (Burnt Orange Selection) --- */
+    .prop-b .node-item:hover {
+      transform: scale(1.05);
+    }
+    .prop-b .node-item:hover .node-label {
+      color: var(--cream);
+    }
+    .prop-b .node-item:hover .node-label::before {
+      content: '• ';
+      color: var(--burnt-orange);
+    }
+
+    .prop-b-selected {
+      position: relative;
+    }
+    .prop-b-selected::before {
+      content: '';
+      position: absolute;
+      left: -6px;
+      top: 10%;
+      height: 80%;
+      width: 3px;
+      background: var(--burnt-orange);
+      border-radius: 1px;
+    }
+    .prop-b-selected .node-label {
+      color: var(--cream);
+      text-decoration: underline;
+      text-decoration-color: var(--burnt-orange);
+      text-underline-offset: 3px;
+    }
+
+    .prop-b-focus {
+      box-shadow: 0 0 0 2px var(--bg-canvas), 0 0 0 3.5px var(--cream);
+      border-radius: 2px;
+    }
+
+    .micro-badge-b {
+      position: absolute;
+      bottom: -2px;
+      right: -6px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .badge-warn-b {
+      color: var(--burnt-orange);
+    }
+    .badge-overload-b {
+      color: var(--burnt-orange);
+      font-size: 11px;
+    }
+    .badge-failed-b {
+      color: #FF5C5C;
+    }
+    .badge-quarantine-b {
+      color: var(--cream);
+    }
+    .badge-degraded-b {
+      color: #E5A93C;
+    }
+
+    .state-explanation {
+      font-size: 11px;
+      color: #B5BAC5;
+      line-height: 1.4;
+    }
+
+    .threat-highlight {
+      color: var(--burnt-orange) !important;
+    }
+    .threat-highlight svg {
+      stroke: var(--burnt-orange) !important;
+    }
+
+    .comparison-summary {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+
+    .comparison-summary h2 {
+      font-size: 16px;
+      color: var(--cream);
+      margin-bottom: 12px;
+    }
+
+    .comparison-summary table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .comparison-summary th, .comparison-summary td {
+      border: 1px solid var(--border-subtle);
+      padding: 10px 14px;
+      text-align: left;
+    }
+
+    .comparison-summary th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--cream);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="badge-r2">R2 Design Exploration</div>
+    <h1>Canvas Node States & Accessibility Sheet</h1>
+    <p class="desc">
+      Exploring 9 discrete node states without enclosing cards or background boxes per the Figma design.
+      Strictly enforces <strong>WCAG 1.4.1 (Never color alone)</strong> using non-color indicators (corner brackets, micro-badges, typographic tags, and glyphs).
+      Addresses the purple selection artifact in the Attacker reference with native Cream (#F3EEE3) vs Burnt Orange (#D9541E) selection styles.
+    </p>
+  </div>
+
+  <div class="grid-proposals">
+
+    <!-- PROPOSAL A -->
+    <div class="proposal-col prop-a">
+      <div class="proposal-header">
+        <div class="proposal-title">
+          <span>Proposal A: Architectural Micro-Badges & Corner Ticks</span>
+        </div>
+        <div class="proposal-subtitle">Selection: Delicate Cream (#F3EEE3) corner framing brackets `┌ ┘` with open diamond `◇` prefix</div>
+      </div>
+
+      <div class="states-table">
+
+        <!-- 1. Normal -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">1. Normal</div>
+            <div class="state-indicator-rule">Baseline idle</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Pure white line icon, full label, restrained grey secondary utilization. Zero boxes.</div>
+        </div>
+
+        <!-- 2. Hover -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">2. Hover</div>
+            <div class="state-indicator-rule">Pointer over node</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item" style="filter: brightness(1.25);">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label" style="text-decoration: underline dashed; text-underline-offset: 3px;">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Brightness boost + dashed label underline indicates interactivity without card expansion.</div>
+        </div>
+
+        <!-- 3. Focus-Visible -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">3. Focus-Visible</div>
+            <div class="state-indicator-rule">Keyboard Tab / Arrows</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item prop-a-focus">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">High contrast 2px dotted Cream outline offset 4px. Clear accessibility ring.</div>
+        </div>
+
+        <!-- 4. Selected -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">4. Selected</div>
+            <div class="state-indicator-rule">Replaces purple box</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item prop-a-selected">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Cream corner brackets `┌ ┘` frame the node without enclosing cards; `◇` title glyph.</div>
+        </div>
+
+        <!-- 5. Warning -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">5. Warning</div>
+            <div class="state-indicator-rule">Load 75% - 89%</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-a badge-warn-a">▲</div>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util" style="color: var(--burnt-orange); font-weight:600;">▲ 81% [WARN]</div>
+            </div>
+          </div>
+          <div class="state-explanation">`▲` Triangle badge at icon corner + `[WARN]` label suffix + orange utilization.</div>
+        </div>
+
+        <!-- 6. Overloaded -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">6. Overloaded</div>
+            <div class="state-indicator-rule">Load 90% - 100%</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-a badge-overload-a">!</div>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util" style="color: var(--burnt-orange); font-weight:700;">»» 98% [OVERLOAD]</div>
+            </div>
+          </div>
+          <div class="state-explanation">Pulsing `!` exclamation badge + double chevron `»»` + `[OVERLOAD]` status.</div>
+        </div>
+
+        <!-- 7. Failed -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">7. Failed</div>
+            <div class="state-indicator-rule">Crashed / 0% health</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item" style="opacity: 0.65;">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-a badge-failed-a">✕</div>
+              </div>
+              <div class="node-label" style="text-decoration: line-through; color: #8F96A3;">Database</div>
+              <div class="node-util" style="color: #FF5C5C; font-weight:600;">0% [OFFLINE]</div>
+            </div>
+          </div>
+          <div class="state-explanation">`✕` Strikethrough icon/label + dimmed opacity + `[OFFLINE]` explicit status.</div>
+        </div>
+
+        <!-- 8. Quarantined -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">8. Quarantined</div>
+            <div class="state-indicator-rule">Isolated / Breaker open</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-a badge-quarantine-a">⚿</div>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util" style="color: var(--cream); font-weight:600;">[ISOLATED]</div>
+            </div>
+          </div>
+          <div class="state-explanation">Key/shield `⚿` badge + `[ISOLATED]` text tag. Distinct from failed (deliberate defense).</div>
+        </div>
+
+        <!-- 9. Degraded -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">9. Degraded</div>
+            <div class="state-indicator-rule">High latency / drop</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-a badge-degraded-a">≈</div>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util" style="color: #F5A623; font-weight:600;">≈ 450ms [SLOW]</div>
+            </div>
+          </div>
+          <div class="state-explanation">Wavy `≈` badge + latency benchmark `450ms` + `[SLOW]` status.</div>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- PROPOSAL B -->
+    <div class="proposal-col prop-b">
+      <div class="proposal-header">
+        <div class="proposal-title">
+          <span>Proposal B: Typographic Pips & Directional Accents</span>
+        </div>
+        <div class="proposal-subtitle">Selection: Burnt Orange (#D9541E) 3px vertical pill bar + solid orange text underline</div>
+      </div>
+
+      <div class="states-table">
+
+        <!-- 1. Normal -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">1. Normal</div>
+            <div class="state-indicator-rule">Baseline idle</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Pure white line icon, full label, restrained grey secondary utilization. Zero boxes.</div>
+        </div>
+
+        <!-- 2. Hover -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">2. Hover</div>
+            <div class="state-indicator-rule">Pointer over node</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item" style="transform: scale(1.05);">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label" style="color: var(--cream);"><span style="color: var(--burnt-orange);">• </span>Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">1.05x subtle scale + Burnt Orange `•` bullet prefix indicates interactive affordance.</div>
+        </div>
+
+        <!-- 3. Focus-Visible -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">3. Focus-Visible</div>
+            <div class="state-indicator-rule">Keyboard Tab / Arrows</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item prop-b-focus">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Dual-ring outline with high contrast offset to canvas background.</div>
+        </div>
+
+        <!-- 4. Selected -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">4. Selected</div>
+            <div class="state-indicator-rule">Replaces purple box</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item prop-b-selected">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+              </div>
+              <div class="node-label">Database</div>
+              <div class="node-util">38%</div>
+            </div>
+          </div>
+          <div class="state-explanation">Burnt Orange 3px vertical accent pill + orange underline. Matches active tab style.</div>
+        </div>
+
+        <!-- 5. Warning -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">5. Warning</div>
+            <div class="state-indicator-rule">Load 75% - 89%</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-b badge-warn-b">◆</div>
+              </div>
+              <div class="node-label"><span style="color: var(--burnt-orange);">◆ </span>Database</div>
+              <div class="node-util" style="color: var(--burnt-orange); font-weight:600;">81% ELEVATED</div>
+            </div>
+          </div>
+          <div class="state-explanation">Solid diamond `◆` prefix + `ELEVATED` status tag in typography.</div>
+        </div>
+
+        <!-- 6. Overloaded -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">6. Overloaded</div>
+            <div class="state-indicator-rule">Load 90% - 100%</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-b badge-overload-b">⚡</div>
+              </div>
+              <div class="node-label"><span style="color: var(--burnt-orange);">⚡ </span>Database</div>
+              <div class="node-util" style="color: var(--burnt-orange); font-weight:700;">98% REDLINE</div>
+            </div>
+          </div>
+          <div class="state-explanation">Lightning bolt `⚡` glyph + `REDLINE` text tag indicates drop threshold.</div>
+        </div>
+
+        <!-- 7. Failed -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">7. Failed</div>
+            <div class="state-indicator-rule">Crashed / 0% health</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item" style="opacity: 0.5;">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-b badge-failed-b">✕</div>
+              </div>
+              <div class="node-label" style="color: #FF5C5C;">[CRASHED] Database</div>
+              <div class="node-util" style="color: #FF5C5C;">0% DEAD</div>
+            </div>
+          </div>
+          <div class="state-explanation">Explicit `[CRASHED]` typographic tag + 50% opacity + `0% DEAD`.</div>
+        </div>
+
+        <!-- 8. Quarantined -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">8. Quarantined</div>
+            <div class="state-indicator-rule">Isolated / Breaker open</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-b badge-quarantine-b">⦗⦘</div>
+              </div>
+              <div class="node-label">⦗ Database ⦘</div>
+              <div class="node-util" style="color: var(--cream);">0% QUARANTINED</div>
+            </div>
+          </div>
+          <div class="state-explanation">Enclosing bracket symbols `⦗ ⦘` isolate the label text physically.</div>
+        </div>
+
+        <!-- 9. Degraded -->
+        <div class="state-row">
+          <div class="state-meta">
+            <div class="state-name">9. Degraded</div>
+            <div class="state-indicator-rule">High latency / drop</div>
+          </div>
+          <div class="node-preview-cell">
+            <div class="node-item">
+              <div class="node-icon-wrapper">
+                <svg viewBox="0 0 55 58" fill="none"><path d="M52.25 10C52.25 14.4183 41.0012 18 27.125 18C13.2488 18 2 14.4183 2 10M52.25 10C52.25 5.58172 41.0012 2 27.125 2C13.2488 2 2 5.58172 2 10M52.25 10V47.3333C52.25 51.76 41.0833 55.3333 27.125 55.3333C13.1667 55.3333 2 51.76 2 47.3333V10M52.25 28.6667C52.25 33.0933 41.0833 36.6667 27.125 36.6667C13.1667 36.6667 2 33.0933 2 28.6667" stroke-width="3" stroke="currentColor"/></svg>
+                <div class="micro-badge-b badge-degraded-b">▼</div>
+              </div>
+              <div class="node-label"><span style="color: #E5A93C;">▼ </span>Database</div>
+              <div class="node-util" style="color: #E5A93C;">450ms (SLOW)</div>
+            </div>
+          </div>
+          <div class="state-explanation">Downward caret `▼` indicating degraded performance + explicit latency value.</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Special Nodes Row: Attacker Mode Threat Source & CDN Globe -->
+  <div class="comparison-summary" style="margin-bottom: 24px;">
+    <h2>Special Nodes (Per Figma Spec)</h2>
+    <div style="display: flex; gap: 48px; margin-top: 16px;">
+      <!-- Attacker Mode Threat Source -->
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="node-item threat-highlight" style="padding: 12px 24px; border: 1px dashed rgba(217, 84, 30, 0.3);">
+          <div class="node-icon-wrapper">
+            <svg viewBox="0 0 47 34" fill="none"><path d="M23.8877 0C29.0939 0 33.6875 3.76309 33.6875 8.60059C33.6873 11.8823 31.5723 14.5435 28.5869 15.917C35.2346 18.1452 40.1191 24.4146 40.1191 31.7129V32.7881L39.2002 33.0566H6.43164V31.9814C6.43164 24.1525 11.7355 17.6276 18.8115 15.6592C16.0265 14.1606 14.0879 11.4731 14.0879 8.33105C14.0881 3.49376 18.3754 5.23331e-06 23.8877 0Z" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
+          <div class="node-label threat-highlight">Threat Sources</div>
+          <div class="node-util threat-highlight">4,200 bots</div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); max-width: 320px;">
+          <strong style="color: var(--burnt-orange);">Attacker Mode Threat Node</strong><br>
+          Uses Burnt Orange (#D9541E) icon and orange label text per Figma reference. Normal nodes never use orange fills or orange primary text.
+        </div>
+      </div>
+
+      <!-- Edge Lane CDN Globe -->
+      <div style="display: flex; align-items: center; gap: 24px;">
+        <div class="node-item" style="padding: 12px 24px; border: 1px dashed rgba(255, 255, 255, 0.1);">
+          <div class="node-icon-wrapper">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M44 24C44 35.0457 35.0457 44 24 44M44 24C44 12.9543 35.0457 4 24 4M44 24H4M24 44C12.9543 44 4 35.0457 4 24M24 44C29.0026 38.5233 31.8455 31.4159 32 24C31.8455 16.5841 29.0026 9.47671 24 4M24 44C18.9974 38.5233 16.1545 31.4159 16 24C16.1545 16.5841 18.9974 9.47671 24 4M4 24C4 12.9543 12.9543 4 24 4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor"/></svg>
+          </div>
+          <div class="node-label">Cloud CDN</div>
+          <div class="node-util">94% Hit Rate</div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); max-width: 320px;">
+          <strong style="color: var(--cream);">Edge Lane Globe CDN</strong><br>
+          Shown as the globe icon in the top edge lane directly after Client, caching static assets globally before requests reach the core compute cluster.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Comparison Summary Table -->
+  <div class="comparison-summary">
+    <h2>Proposals Rationale & Comparison</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Attribute</th>
+          <th>Proposal A (Architectural Micro-Badges)</th>
+          <th>Proposal B (Typographic Pips & Accents)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Selection Indicator</strong></td>
+          <td>Delicate Cream (#F3EEE3) <code>┌ ┘</code> corner tick brackets framing the node + <code>◇</code> title prefix.</td>
+          <td>Burnt Orange (#D9541E) 3px vertical indicator pill to the left of the icon + orange underline.</td>
+        </tr>
+        <tr>
+          <td><strong>WCAG Non-Color Method</strong></td>
+          <td>Geometric badges at top-right of icon (<code>▲</code>, <code>!</code>, <code>✕</code>, <code>⚿</code>, <code>≈</code>) + status suffixes.</td>
+          <td>Typographic bullet/pip prefix (<code>•</code>, <code>◆</code>, <code>⚡</code>, <code>⦗⦘</code>, <code>▼</code>) + explicit status tags.</td>
+        </tr>
+        <tr>
+          <td><strong>No-Box Fidelity</strong></td>
+          <td>100% free-floating on canvas. No cards, borders, or backgrounds.</td>
+          <td>100% free-floating on canvas. No cards, borders, or backgrounds.</td>
+        </tr>
+        <tr>
+          <td><strong>Motion Affordance</strong></td>
+          <td>Subtle brightness lift on hover + dashed underline; pulsing badge on Overloaded.</td>
+          <td>1.05x subtle scale on hover + orange bullet entry; pulsing lightning on Overloaded.</td>
+        </tr>
+        <tr>
+          <td><strong>Recommendation</strong></td>
+          <td><strong>(Recommended)</strong> Highest fidelity to Figma's minimal drafting aesthetic; Cream selection preserves orange purely for threats/active tabs.</td>
+          <td>High-impact console style; makes active node selection immediately pop out on dark canvas.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</body>
+</html>
