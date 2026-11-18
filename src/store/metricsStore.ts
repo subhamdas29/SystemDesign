@@ -51,7 +51,7 @@ export const useMetricsStore = create<MetricsStoreState>((set, get) => ({
   samples: [],
   latestSample: null,
   timeTravelTimeMs: null,
-  dashboardState: 'compact',
+  dashboardState: 'collapsed',
   activeDashboardTab: 'overview',
   chartsTimeWindow: '60s',
   currentRunResult: null,

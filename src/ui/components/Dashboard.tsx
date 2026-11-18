@@ -68,38 +68,39 @@ export const Dashboard: React.FC = () => {
   if (dashboardState === 'collapsed') {
     return (
       <aside
-        className="absolute top-4 right-4 z-20 select-none animate-in fade-in"
+        className="absolute top-4 right-6 z-20 select-none animate-in fade-in"
         aria-label="Collapsed System Metrics Dashboard"
       >
         <button
           type="button"
           onClick={() => setDashboardState('compact')}
-          className="h-9 px-3.5 rounded-full bg-[#131316]/95 hover:bg-[#18181b] border border-[#3f3f46] hover:border-white text-white text-xs font-mono shadow-2xl transition-all flex items-center gap-2.5 backdrop-blur-md"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#18181B] border border-white/20 text-[11px] font-mono text-white/90 shadow-md hover:border-white/50 transition-colors cursor-pointer"
           title="Click to expand dashboard"
         >
-          {/* Health indicator: Shape + Label, never color alone */}
+          {/* Health indicator dot */}
           <span
-            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase flex items-center gap-1 ${
-              health.status === 'healthy'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                : health.status === 'degraded'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-            }`}
+            className="w-2 h-2 rounded-full inline-block"
+            style={{
+              backgroundColor:
+                health.status === 'healthy'
+                  ? '#008604'
+                  : health.status === 'degraded'
+                    ? '#F59E0B'
+                    : '#D9541E',
+            }}
+          />
+          <span className="font-medium capitalize">{health.status}</span>
+          <span className="text-[#A1A1AA]">
+            {(system?.incomingRps ?? peakRps).toLocaleString()} RPS
+          </span>
+          <span
+            className={
+              errorRatePercent > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#A1A1AA]'
+            }
           >
-            <span>{health.status === 'healthy' ? '●' : health.status === 'degraded' ? '▲' : '✖'}</span>
-            <span>{health.status}</span>
+            {errorRatePercent}% err
           </span>
-
-          <span className="font-semibold text-white">
-            {system ? system.incomingRps.toLocaleString() : '0'} RPS
-          </span>
-
-          <span className="text-[10px] text-[var(--color-text-muted)]">
-            • {errorRatePercent}% err
-          </span>
-
-          <span className="text-[11px] text-[var(--color-text-faint)] ml-0.5">▼</span>
+          <span className="text-[#71717A] text-[9px]">▾</span>
         </button>
       </aside>
     );

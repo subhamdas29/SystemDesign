@@ -45,9 +45,7 @@ export const App: React.FC = () => {
   const setHint = useUiStore((s) => s.setHint);
 
   const isInventoryOpen = useUiStore(selectIsInventoryOpen);
-  const toggleInventory = useUiStore((s) => s.toggleInventory);
   const isInspectorOpen = useUiStore(selectIsInspectorOpen);
-  const toggleInspector = useUiStore((s) => s.toggleInspector);
   const isAttackerMode = useAttackStore((s) => s.isAttackerMode);
 
   // Modals state
@@ -121,29 +119,12 @@ export const App: React.FC = () => {
       <Header />
 
       {/* 2. Main Workspace */}
-      <div className="grid grid-cols-[auto_1fr_auto] flex-1 min-h-0 min-w-0 relative overflow-hidden">
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {/* Left Column: Inventory Panel or Attack Console */}
-        {isInventoryOpen ? (
+        {isInventoryOpen && (
           <div className="w-[340px] max-w-[85vw] h-full shrink-0 relative overflow-hidden z-10 transition-all duration-200">
             {isAttackerMode ? <AttackConsole /> : <InventoryPanel />}
           </div>
-        ) : (
-          <aside
-            className="w-10 h-full shrink-0 bg-[#131316] border-r border-[#27272a] flex flex-col items-center py-3 z-10"
-            aria-label={isAttackerMode ? 'Collapsed Attack Console' : 'Collapsed Inventory Panel'}
-          >
-            <button
-              type="button"
-              onClick={toggleInventory}
-              title={`Expand ${isAttackerMode ? 'Attack Console' : 'Inventory Panel'}`}
-              className="w-7 h-7 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white text-xs flex items-center justify-center transition-all shadow-sm"
-            >
-              ▶
-            </button>
-            <span className="mt-8 text-[11px] font-bold text-[var(--color-text-muted)] tracking-widest uppercase [writing-mode:vertical-lr] rotate-180">
-              {isAttackerMode ? 'Attack Console' : 'Inventory'}
-            </span>
-          </aside>
         )}
 
         {/* Center Column: Central Canvas */}
@@ -182,27 +163,10 @@ export const App: React.FC = () => {
         </main>
 
         {/* Right Column: Inspector Panel */}
-        {isInspectorOpen ? (
+        {isInspectorOpen && (
           <div className="w-[360px] max-w-[85vw] h-full shrink-0 relative overflow-hidden z-10 transition-all duration-200">
             <InspectorPanel />
           </div>
-        ) : (
-          <aside
-            className="w-10 h-full shrink-0 bg-[#131316] border-l border-[#27272a] flex flex-col items-center py-3 z-10"
-            aria-label="Collapsed Inspector Panel"
-          >
-            <button
-              type="button"
-              onClick={toggleInspector}
-              title="Expand Inspector Panel"
-              className="w-7 h-7 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white text-xs flex items-center justify-center transition-all shadow-sm"
-            >
-              ◀
-            </button>
-            <span className="mt-8 text-[11px] font-bold text-[var(--color-text-muted)] tracking-widest uppercase [writing-mode:vertical-lr] rotate-180">
-              Inspector
-            </span>
-          </aside>
         )}
       </div>
 

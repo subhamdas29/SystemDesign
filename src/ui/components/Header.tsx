@@ -5,10 +5,22 @@ import {
   selectCanRedo,
   selectGraph,
 } from '@store';
-import { useUiStore, selectAppMode } from '@store';
+import { useUiStore, selectAppMode, selectIsInventoryOpen, selectIsInspectorOpen } from '@store';
 import { useSimulationStore, selectActiveFailures, selectSimPlayStatus } from '@store';
 import { useAttackStore } from '@store';
-import { TUTORIALS } from '../../scenarios/tutorials/catalog';
+import logoWebp from '../../assets/LifeOfARequestLOGO.webp';
+
+import folderSvg from '../../assets/icons/Folder.svg?raw';
+import shareSvg from '../../assets/icons/share.svg?raw';
+import downloadSvg from '../../assets/icons/download.svg?raw';
+import userSvg from '../../assets/icons/User.svg?raw';
+import arrowDropDownSvg from '../../assets/icons/arrow_drop_down.svg?raw';
+import inventorySvg from '../../assets/icons/inventory.svg?raw';
+import eyeSvg from '../../assets/icons/eye.svg?raw';
+import handSvg from '../../assets/icons/hand.svg?raw';
+import layersSvg from '../../assets/icons/Layers.svg?raw';
+
+export type LayerType = 'Main' | 'Inside Server' | 'DNS Resolution' | 'TCP/TLS';
 
 export const Header: React.FC = () => {
   const canUndo = useGraphStore(selectCanUndo);
@@ -20,16 +32,18 @@ export const Header: React.FC = () => {
 
   const mode = useUiStore(selectAppMode);
   const setMode = useUiStore((s) => s.setMode);
+  const isInventoryOpen = useUiStore(selectIsInventoryOpen);
+  const toggleInventory = useUiStore((s) => s.toggleInventory);
+  const isInspectorOpen = useUiStore(selectIsInspectorOpen);
+  const toggleInspector = useUiStore((s) => s.toggleInspector);
+
   const togglePresetModal = useUiStore((s) => s.togglePresetModal);
   const toggleChaosPanel = useUiStore((s) => s.toggleChaosPanel);
   const toggleProjectLibrary = useUiStore((s) => s.toggleProjectLibrary);
   const toggleShareModal = useUiStore((s) => s.toggleShareModal);
-  const toggleExampleGallery = useUiStore((s) => s.toggleExampleGallery);
   const toggleSettingsModal = useUiStore((s) => s.toggleSettingsModal);
-  const setTourOpen = useUiStore((s) => s.setTourOpen);
-  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const setGuideOpen = useUiStore((s) => s.setGuideOpen);
-  const startTutorial = useUiStore((s) => s.startTutorial);
+  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
 
   const activeFailures = useSimulationStore(selectActiveFailures);
   const playStatus = useSimulationStore(selectSimPlayStatus);
@@ -38,21 +52,30 @@ export const Header: React.FC = () => {
   const stepSim = useSimulationStore((s) => s.step);
   const setSpeedSim = useSimulationStore((s) => s.setSpeed);
 
-  const [isHelpMenuOpen, setIsHelpMenuOpen] = useState(false);
-  const helpMenuRef = useRef<HTMLDivElement | null>(null);
+  // Layer State
+  const [activeLayer, setActiveLayer] = useState<LayerType>('Main');
+  const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [activeNavTab, setActiveNavTab] = useState<'Create' | 'Problems' | 'Presets' | 'Interview'>('Create');
 
-  // Close help dropdown on click outside
+  const layerMenuRef = useRef<HTMLDivElement | null>(null);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close menus on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (helpMenuRef.current && !helpMenuRef.current.contains(e.target as Node)) {
-        setIsHelpMenuOpen(false);
+      if (layerMenuRef.current && !layerMenuRef.current.contains(e.target as Node)) {
+        setIsLayerMenuOpen(false);
+      }
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Global keyboard shortcuts (Ctrl+Z, Ctrl+Y, Space, S, R, 1, 2, 4, 8, ?, Esc)
+  // Global keyboard shortcuts (Ctrl+Z, Ctrl+Y, Space, S, R, 1, 2, 4, 8, ?)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
@@ -101,249 +124,356 @@ export const Header: React.FC = () => {
     useAttackStore.getState().setAttackerMode(newMode === 'attacker');
   };
 
+  const handleDownloadProject = () => {
+    const jsonStr = JSON.stringify(graph, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `life-of-a-request-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <header className="h-14 w-full bg-[#131316] border-b border-[#27272a] px-5 flex items-center justify-between select-none z-20">
-      {/* Title & Brand */}
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#ffffff] to-[#8e8e93] p-[1px] shadow-sm">
-          <div className="w-full h-full bg-[#111113] rounded-[7px] flex items-center justify-center font-mono font-black text-xs text-white">
-            LR
-          </div>
+    <div className="w-full flex flex-col shrink-0 select-none z-20">
+      {/* 1. TOP BAR (Cream #F3EEE3, height 80px) */}
+      <header
+        className="h-20 w-full px-6 flex items-center justify-between border-b border-[#E2DDD1]"
+        style={{ backgroundColor: '#F3EEE3' }}
+      >
+        {/* Left: Brand Logo */}
+        <div className="flex items-center gap-3">
+          <img
+            src={logoWebp}
+            alt="Life of a Request"
+            className="h-9 w-auto object-contain"
+            draggable={false}
+          />
         </div>
-        <div>
-          <h1 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-            Life of a Request
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-[var(--color-text-secondary)] border border-white/20 font-normal">
-              Simulator
-            </span>
-          </h1>
-          <p className="text-[10px] text-[var(--color-text-muted)]">Interactive Guided System Design</p>
-        </div>
-      </div>
 
-      {/* Mode Toggle (Builder / Attacker) */}
-      <div className="flex items-center bg-[#0b0b0d] p-1 rounded-lg border border-[#27272a]">
-        <button
-          type="button"
-          onClick={() => handleSetMode('builder')}
-          className={`h-7 px-3 rounded-md text-xs font-medium transition-all ${
-            mode === 'builder'
-              ? 'bg-[#18181b] text-white shadow-sm border border-[#3f3f46]'
-              : 'text-[var(--color-text-muted)] hover:text-white'
-          }`}
-        >
-          Builder Mode
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleSetMode('attacker')}
-          className={`h-7 px-3 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 ${
-            mode === 'attacker'
-              ? 'bg-amber-950/60 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.35)] border border-amber-500/80 font-bold'
-              : 'text-[var(--color-text-muted)] hover:text-amber-300'
-          }`}
-        >
-          <span>🎯 Attacker Mode</span>
-        </button>
-      </div>
-
-      {/* Action Controls & Navigation */}
-      <div className="flex items-center gap-2">
-        {/* Project Library Button */}
-        <button
-          type="button"
-          onClick={toggleProjectLibrary}
-          title="Open Project Library"
-          className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <span>📁</span>
-          <span>Projects</span>
-        </button>
-
-        {/* Gallery Button */}
-        <button
-          type="button"
-          onClick={toggleExampleGallery}
-          title="Browse Example Architectures"
-          className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <span>🏛️</span>
-          <span>Gallery</span>
-        </button>
-
-        {/* Share Button */}
-        <button
-          type="button"
-          onClick={toggleShareModal}
-          title="Share Architecture Link"
-          className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <span>🔗</span>
-          <span>Share</span>
-        </button>
-
-        {/* Scenarios Preset Picker */}
-        <button
-          type="button"
-          onClick={togglePresetModal}
-          title="Open Disaster & Cascade Scenario Presets"
-          className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5 shadow-sm"
-        >
-          <span>🌪️</span>
-          <span>Scenarios</span>
-        </button>
-
-        {/* Chaos & Failures Toggle */}
-        <button
-          type="button"
-          onClick={toggleChaosPanel}
-          title="Inject or Schedule Failure Injections"
-          className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm border ${
-            activeFailures.length > 0
-              ? 'bg-red-950/80 text-red-200 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)] animate-pulse'
-              : 'bg-[#18181b] hover:bg-[#222226] text-white border-[#3f3f46] hover:border-white'
-          }`}
-        >
-          <span>⚡</span>
-          <span>Chaos</span>
-          {activeFailures.length > 0 && (
-            <span className="px-1.5 py-0.2 text-[9px] font-mono font-bold rounded-full bg-red-600 text-white">
-              {activeFailures.length}
-            </span>
-          )}
-        </button>
-
-        <div className="h-5 w-px bg-[#27272a]" />
-
-        {/* Undo, Redo, Reset */}
-        <div className="flex items-center gap-1">
+        {/* Center: Navigation Tabs (Roboto Mono, Bold, 16px) */}
+        <nav className="h-full flex items-center gap-8 font-mono text-[16px] font-bold tracking-tight">
+          {/* Create Tab (Active) */}
           <button
             type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            title="Undo (Ctrl+Z)"
-            aria-label="Undo"
-            className={`h-8 px-2.5 rounded text-xs font-mono border transition-all ${
-              canUndo
-                ? 'bg-[#18181b] hover:bg-[#222226] text-white border-[#3f3f46] hover:border-white'
-                : 'bg-[#111113] text-[#52525b] border-[#222226] cursor-not-allowed'
+            onClick={() => setActiveNavTab('Create')}
+            className={`relative h-full flex items-center px-1 transition-colors ${
+              activeNavTab === 'Create' ? 'text-[#D9541E]' : 'text-[#111111] hover:opacity-80'
             }`}
           >
-            ↺ Undo
+            <span>Create</span>
+            {activeNavTab === 'Create' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#D9541E]" />
+            )}
           </button>
 
+          {/* Problems Tab */}
           <button
             type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            title="Redo (Ctrl+Y)"
-            aria-label="Redo"
-            className={`h-8 px-2.5 rounded text-xs font-mono border transition-all ${
-              canRedo
-                ? 'bg-[#18181b] hover:bg-[#222226] text-white border-[#3f3f46] hover:border-white'
-                : 'bg-[#111113] text-[#52525b] border-[#222226] cursor-not-allowed'
+            onClick={() => {
+              setActiveNavTab('Problems');
+              togglePresetModal();
+            }}
+            className={`relative h-full flex items-center px-1 transition-colors ${
+              activeNavTab === 'Problems' ? 'text-[#D9541E]' : 'text-[#111111] hover:opacity-80'
             }`}
           >
-            ↻ Redo
+            <span>Problems</span>
+            {activeNavTab === 'Problems' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#D9541E]" />
+            )}
           </button>
 
+          {/* Presets Tab */}
           <button
             type="button"
-            onClick={reset}
-            title="Reset to starter graph"
-            aria-label="Reset architecture"
-            className="h-8 px-2.5 rounded text-xs font-mono bg-[#18181b] hover:bg-[#222226] text-[var(--color-text-secondary)] hover:text-white border border-[#3f3f46] hover:border-white transition-all ml-1"
+            onClick={() => {
+              setActiveNavTab('Presets');
+              togglePresetModal();
+            }}
+            className={`relative h-full flex items-center px-1 transition-colors ${
+              activeNavTab === 'Presets' ? 'text-[#D9541E]' : 'text-[#111111] hover:opacity-80'
+            }`}
           >
-            Reset
+            <span>Presets</span>
+            {activeNavTab === 'Presets' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#D9541E]" />
+            )}
           </button>
-        </div>
 
-        <div className="h-5 w-px bg-[#27272a]" />
-
-        {/* Settings Button */}
-        <button
-          type="button"
-          onClick={toggleSettingsModal}
-          title="Settings"
-          aria-label="Open settings"
-          className="h-8 w-8 rounded-lg text-xs bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center justify-center shadow-sm"
-        >
-          ⚙️
-        </button>
-
-        {/* Help Menu Dropdown */}
-        <div className="relative" ref={helpMenuRef}>
+          {/* Interview Tab */}
           <button
             type="button"
-            onClick={() => setIsHelpMenuOpen(!isHelpMenuOpen)}
-            title="Help & Tutorials"
-            aria-label="Open help menu"
-            className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1 shadow-sm"
+            onClick={() => {
+              setActiveNavTab('Interview');
+              setGuideOpen(true);
+            }}
+            className={`relative h-full flex items-center px-1 transition-colors ${
+              activeNavTab === 'Interview' ? 'text-[#D9541E]' : 'text-[#111111] hover:opacity-80'
+            }`}
           >
-            <span>❓</span>
-            <span className="text-[10px]">▼</span>
+            <span>Interview</span>
+            {activeNavTab === 'Interview' && (
+              <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#D9541E]" />
+            )}
           </button>
+        </nav>
 
-          {isHelpMenuOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl bg-[#18181b] border border-[#3f3f46] shadow-2xl p-1.5 z-50 text-xs text-white">
-              <button
-                type="button"
-                onClick={() => {
-                  setTourOpen(true);
-                  setIsHelpMenuOpen(false);
-                }}
-                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-              >
-                <span>🗺️</span>
-                <span>Welcome Tour</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGuideOpen(true);
-                  setIsHelpMenuOpen(false);
-                }}
-                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-              >
-                <span>📖</span>
-                <span>Simulation Guide</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShortcutsOpen(true);
-                  setIsHelpMenuOpen(false);
-                }}
-                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 flex items-center gap-2"
-              >
-                <span>⌨️</span>
-                <span>Keyboard Shortcuts (?)</span>
-              </button>
+        {/* Right: Actions (Folder, Share, Download, User) */}
+        <div className="flex items-center gap-5 text-[#111111]">
+          {/* Project Library */}
+          <button
+            type="button"
+            onClick={toggleProjectLibrary}
+            title="Projects Library"
+            aria-label="Projects Library"
+            className="hover:opacity-70 transition-opacity p-1"
+            dangerouslySetInnerHTML={{ __html: folderSvg }}
+          />
 
-              <div className="my-1 border-t border-[#27272a]" />
-              <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-[var(--color-text-faint)]">
-                Guided Tutorials
-              </div>
+          {/* Share */}
+          <button
+            type="button"
+            onClick={toggleShareModal}
+            title="Share Project"
+            aria-label="Share Project"
+            className="hover:opacity-70 transition-opacity p-1"
+            dangerouslySetInnerHTML={{ __html: shareSvg }}
+          />
 
-              {TUTORIALS.map((tut) => (
+          {/* Download */}
+          <button
+            type="button"
+            onClick={handleDownloadProject}
+            title="Download Architecture JSON"
+            aria-label="Download Architecture JSON"
+            className="hover:opacity-70 transition-opacity p-1"
+            dangerouslySetInnerHTML={{ __html: downloadSvg }}
+          />
+
+          {/* User / Settings Menu */}
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              title="Settings & Help"
+              aria-label="Settings & Help"
+              className="flex items-center hover:opacity-70 transition-opacity p-1"
+            >
+              <span dangerouslySetInnerHTML={{ __html: userSvg }} />
+              <span dangerouslySetInnerHTML={{ __html: arrowDropDownSvg }} />
+            </button>
+
+            {isUserMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-[#111113] border border-[#27272A] rounded-lg shadow-2xl py-1 text-white font-mono text-xs z-50">
                 <button
-                  key={tut.id}
                   type="button"
                   onClick={() => {
-                    startTutorial(tut.id);
-                    setIsHelpMenuOpen(false);
+                    setIsUserMenuOpen(false);
+                    toggleSettingsModal();
                   }}
-                  className="w-full text-left px-2.5 py-1 rounded-lg hover:bg-white/10 text-[11px] truncate text-neutral-300 hover:text-white"
+                  className="w-full text-left px-3 py-2 hover:bg-[#18181B] transition-colors"
                 >
-                  {tut.title}
+                  Settings
                 </button>
-              ))}
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    setShortcutsOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-[#18181B] transition-colors flex justify-between"
+                >
+                  <span>Shortcuts</span>
+                  <span className="text-[#71717A]">?</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    setGuideOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-[#18181B] transition-colors"
+                >
+                  Guide
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* 2. SECOND BAR / SUBHEADER TOOLBAR (Near-black #0B0B0D, height 54px) */}
+      <div
+        className="h-[54px] w-full px-6 flex items-center justify-between"
+        style={{ backgroundColor: '#0B0B0D' }}
+      >
+        {/* Left Section: Menu Toggle, Mode Toggle Pill, Action Buttons */}
+        <div className="flex items-center gap-6">
+          {/* Inventory / Catalog Toggle Icon */}
+          <button
+            type="button"
+            onClick={toggleInventory}
+            title="Toggle Component Inventory"
+            aria-label="Toggle Component Inventory"
+            className={`p-1.5 rounded transition-all text-white hover:opacity-80 ${
+              isInventoryOpen ? 'opacity-100' : 'opacity-60'
+            }`}
+            dangerouslySetInnerHTML={{ __html: inventorySvg }}
+          />
+
+          {/* Mode Toggle Pill [ Builder | Attacker ] */}
+          <div className="inline-flex items-center bg-[#2C2C2C] p-0.5 rounded-lg border border-[#3A3A3E]">
+            {/* Builder Mode Pill */}
+            <button
+              type="button"
+              onClick={() => handleSetMode('builder')}
+              className={`h-7 px-3 rounded-md text-[11px] font-mono font-medium transition-all ${
+                mode === 'builder'
+                  ? 'bg-[#656565] text-white shadow-sm font-semibold'
+                  : 'text-white/80 hover:text-white'
+              }`}
+            >
+              Builder
+            </button>
+
+            {/* Attacker Mode Pill */}
+            <button
+              type="button"
+              onClick={() => handleSetMode('attacker')}
+              className={`h-7 px-3 rounded-md text-[11px] font-mono font-medium transition-all ${
+                mode === 'attacker'
+                  ? 'bg-[#F3EEE3] text-[#D9541E] font-bold shadow-sm'
+                  : 'text-white/80 hover:text-[#D9541E]'
+              }`}
+            >
+              Attacker
+            </button>
+          </div>
+
+          {/* Action Text Buttons: Chaos, Undo, Redo, Reset, Settings (Roboto Mono, Medium, 11px) */}
+          <div className="flex items-center gap-5 font-mono text-[11px] font-medium text-white">
+            <button
+              type="button"
+              onClick={toggleChaosPanel}
+              className={`hover:opacity-80 transition-opacity ${
+                activeFailures.length > 0 ? 'text-[#D9541E] font-bold animate-pulse' : ''
+              }`}
+              title="Chaos Engineering & Failure Injections"
+            >
+              Chaos{activeFailures.length > 0 ? ` (${activeFailures.length})` : ''}
+            </button>
+
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              className={`hover:opacity-80 transition-opacity ${
+                canUndo ? 'text-white' : 'text-[#52525B] cursor-not-allowed'
+              }`}
+              title="Undo (Ctrl+Z)"
+            >
+              Undo
+            </button>
+
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              className={`hover:opacity-80 transition-opacity ${
+                canRedo ? 'text-white' : 'text-[#52525B] cursor-not-allowed'
+              }`}
+              title="Redo (Ctrl+Y)"
+            >
+              Redo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => reset()}
+              className="hover:opacity-80 transition-opacity text-white"
+              title="Reset Architecture Layout"
+            >
+              Reset
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleSettingsModal}
+              className="hover:opacity-80 transition-opacity text-white"
+              title="Simulation & UI Settings"
+            >
+              Settings
+            </button>
+          </div>
+        </div>
+
+        {/* Right Section: View Tools (Eye, Hand, Layers) */}
+        <div className="flex items-center gap-5 text-white">
+          {/* Eye Icon (Toggle Inspector) */}
+          <button
+            type="button"
+            onClick={toggleInspector}
+            title={isInspectorOpen ? 'Collapse Inspector' : 'Expand Inspector'}
+            aria-label="Toggle Inspector"
+            className={`p-1 hover:opacity-80 transition-opacity ${
+              isInspectorOpen ? 'opacity-100' : 'opacity-60'
+            }`}
+            dangerouslySetInnerHTML={{ __html: eyeSvg }}
+          />
+
+          {/* Hand Icon (Free-form / Pan mode) */}
+          <button
+            type="button"
+            title="Hand Tool (Pan / Explore Canvas)"
+            aria-label="Hand Tool"
+            className="p-1 hover:opacity-80 transition-opacity"
+            dangerouslySetInnerHTML={{ __html: handSvg }}
+          />
+
+          {/* Layers Icon (Dropdown: Main, Inside Server, DNS Resolution, TCP/TLS) */}
+          <div className="relative" ref={layerMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsLayerMenuOpen(!isLayerMenuOpen)}
+              title={`Active Layer: ${activeLayer}`}
+              aria-label="Layers Menu"
+              className="p-1 hover:opacity-80 transition-opacity flex items-center gap-1"
+            >
+              <span dangerouslySetInnerHTML={{ __html: layersSvg }} />
+            </button>
+
+            {isLayerMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-[#111113] border border-[#27272A] rounded-lg shadow-2xl py-1 text-white font-mono text-xs z-50">
+                <div className="px-3 py-1.5 text-[10px] text-[#71717A] uppercase tracking-wider font-semibold border-b border-[#27272A]">
+                  Layers
+                </div>
+                {(['Main', 'Inside Server', 'DNS Resolution', 'TCP/TLS'] as LayerType[]).map((layer) => (
+                  <button
+                    key={layer}
+                    type="button"
+                    onClick={() => {
+                      setActiveLayer(layer);
+                      setIsLayerMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 transition-colors flex items-center justify-between ${
+                      activeLayer === layer
+                        ? 'bg-[#18181B] text-[#D9541E] font-bold'
+                        : 'text-[#D4D4D4] hover:bg-[#18181B] hover:text-white'
+                    }`}
+                  >
+                    <span>{layer}</span>
+                    {activeLayer === layer && <span>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </header>
+    </div>
   );
 };
 
+export default Header;

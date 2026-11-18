@@ -1,7 +1,7 @@
 /**
- * Interactive Simulation Control Bar.
- * Controls playback (Play, Pause, Step, Reset, Speed), timeline scrubbing,
- * execution mode badges, traffic configuration modal opener, and event log toggle.
+ * Interactive Simulation Control Bar (Redesign).
+ * Minimalist schematic bar at bottom (#2C2C2C, 45px height).
+ * Font: Roboto Mono Medium 11px. Controls playback, scrub timeline, speed, RPS, and logs.
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -15,8 +15,6 @@ import {
   selectSimSeed,
   selectIsEventLogOpen,
   selectTrafficConfig,
-  selectActiveMode,
-  selectIsTrafficModalOpen,
   selectVisualizationDisplayMode,
   SimulationSpeed,
 } from '../../store/simulationStore';
@@ -32,9 +30,7 @@ export const ControlBar: React.FC = () => {
   const rps = useSimulationStore(selectSimRps);
   const seed = useSimulationStore(selectSimSeed);
   const isEventLogOpen = useSimulationStore(selectIsEventLogOpen);
-  const isTrafficModalOpen = useSimulationStore(selectIsTrafficModalOpen);
   const trafficConfig = useSimulationStore(selectTrafficConfig);
-  const activeMode = useSimulationStore(selectActiveMode);
   const displayMode = useSimulationStore(selectVisualizationDisplayMode);
   const setDisplayMode = useSimulationStore((s) => s.setDisplayMode);
 
@@ -83,7 +79,8 @@ export const ControlBar: React.FC = () => {
   return (
     <>
       <footer
-        className="h-16 w-full bg-[#131316] border-t border-[#27272a] px-5 flex items-center justify-between select-none z-30"
+        className="h-[45px] w-full px-5 flex items-center justify-between select-none z-30 font-mono text-[11px] border-t border-[#3A3A3E]"
+        style={{ backgroundColor: '#2C2C2C' }}
         aria-label="Simulation Control Bar"
       >
         {/* Left: Playback Controls & Speed */}
@@ -94,13 +91,13 @@ export const ControlBar: React.FC = () => {
             disabled={!validation.valid}
             title={!validation.valid ? `Cannot simulate: ${validation.errors[0]}` : 'Play / Pause simulation'}
             className={`
-              h-8 px-3.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all
+              h-7 px-3 rounded text-[11px] font-mono font-medium flex items-center gap-1.5 transition-all
               ${
                 !validation.valid
-                  ? 'bg-[#18181b] text-[#52525b] border border-[#27272a] cursor-not-allowed'
+                  ? 'bg-[#1F1F22] text-[#52525B] cursor-not-allowed'
                   : status === 'running'
-                  ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40 hover:bg-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                  : 'bg-white text-black hover:bg-[#e4e4e7] border border-white shadow-[0_0_12px_rgba(255,255,255,0.3)] active:scale-95'
+                  ? 'bg-[#D9541E] text-white font-bold'
+                  : 'bg-white text-black hover:bg-[#E4E4E7]'
               }
             `}
           >
@@ -113,33 +110,33 @@ export const ControlBar: React.FC = () => {
             onClick={() => step(graph)}
             disabled={!validation.valid || status === 'running'}
             title="Step forward one event / tick"
-            className="h-8 px-2.5 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white text-xs font-mono disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            ⏯ Step
+            Step
           </button>
 
           <button
             type="button"
             onClick={() => reset(graph)}
             title="Reset simulation to t=0"
-            className="h-8 px-2.5 rounded-lg bg-[#18181b] hover:bg-[#222226] text-[var(--color-text-secondary)] hover:text-white border border-[#3f3f46] hover:border-white text-xs font-mono transition-all"
+            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#D4D4D4] hover:text-white transition-all"
           >
-            ↺ Reset
+            Reset
           </button>
 
-          <div className="h-5 w-px bg-[#27272a] mx-1" />
+          <div className="h-4 w-px bg-[#44444A] mx-1" />
 
-          {/* Speed Toggles */}
-          <div className="flex items-center gap-0.5 bg-[#0b0b0d] p-0.5 rounded-lg border border-[#27272a]">
+          {/* Speed Toggles: 1x, 2x, 4x, 8x */}
+          <div className="flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E]">
             {([1, 2, 4, 8] as SimulationSpeed[]).map((s) => (
               <button
                 key={s}
                 type="button"
                 onClick={() => setSpeed(s)}
-                className={`h-7 px-2 rounded-md text-[11px] font-mono transition-all ${
+                className={`h-6 px-1.5 rounded text-[10px] font-mono transition-all ${
                   speed === s
-                    ? 'bg-[#222226] text-white font-bold border border-white/30 shadow-sm'
-                    : 'text-[var(--color-text-muted)] hover:text-white'
+                    ? 'bg-[#656565] text-white font-bold'
+                    : 'text-[#A1A1AA] hover:text-white'
                 }`}
               >
                 {s}x
@@ -149,8 +146,8 @@ export const ControlBar: React.FC = () => {
         </div>
 
         {/* Center: Timeline Scrubber */}
-        <div className="flex-1 max-w-sm mx-4 flex items-center gap-3">
-          <span className="font-mono text-xs text-white w-14 text-right">
+        <div className="flex-1 max-w-sm mx-4 flex items-center gap-2.5">
+          <span className="font-mono text-[11px] text-white w-12 text-right">
             {Math.round(simTimeMs)}ms
           </span>
 
@@ -161,67 +158,46 @@ export const ControlBar: React.FC = () => {
             step={10}
             value={simTimeMs}
             onChange={(e) => seek(Number(e.target.value), graph)}
-            className="flex-1 accent-white h-1.5 bg-[#27272a] rounded-lg appearance-none cursor-pointer"
+            className="flex-1 accent-white h-1 bg-[#1A1A1D] rounded appearance-none cursor-pointer"
           />
 
-          <span className="font-mono text-xs text-[var(--color-text-faint)] w-14">
+          <span className="font-mono text-[11px] text-[#A1A1AA] w-12">
             {durationMs}ms
           </span>
         </div>
 
         {/* Right: Traffic Config Button, Mode Badge, Volume indicator & Log Toggle */}
-        <div className="flex items-center gap-2.5 text-xs font-mono">
-          {/* Display Mode Toggle: Individual vs Aggregate */}
+        <div className="flex items-center gap-2.5 text-[11px] font-mono">
+          {/* Display Mode Toggle: Individual vs Flow */}
           <div
-            className="flex items-center bg-[#0b0b0d] p-0.5 rounded-lg border border-[#27272a]"
+            className="flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E]"
             role="group"
             aria-label="Visualization Mode"
           >
             <button
               type="button"
               onClick={() => setDisplayMode('individual')}
-              title="Individual Requests: render discrete packets with motion trails"
-              className={`h-7 px-2 rounded-md text-[11px] font-mono transition-all flex items-center gap-1 ${
+              title="Individual Requests: discrete packet circles"
+              className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
                 displayMode === 'individual'
-                  ? 'bg-[#222226] text-white font-bold border border-white/30 shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:text-white'
+                  ? 'bg-[#656565] text-white font-bold'
+                  : 'text-[#A1A1AA] hover:text-white'
               }`}
             >
-              <span>⚪</span>
-              <span className="hidden xl:inline">Packets</span>
+              Packets
             </button>
             <button
               type="button"
               onClick={() => setDisplayMode('aggregate')}
-              title="Aggregate Flow: render continuous high-throughput flowing particle bands"
-              className={`h-7 px-2 rounded-md text-[11px] font-mono transition-all flex items-center gap-1 ${
+              title="Aggregate Flow: continuous particle stream"
+              className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
                 displayMode === 'aggregate'
-                  ? 'bg-[#222226] text-white font-bold border border-white/30 shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:text-white'
+                  ? 'bg-[#656565] text-white font-bold'
+                  : 'text-[#A1A1AA] hover:text-white'
               }`}
             >
-              <span>〰</span>
-              <span className="hidden xl:inline">Flow</span>
+              Flow
             </button>
-          </div>
-
-          {/* Active Mode Badge with Tooltip */}
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#18181b] border border-[#27272a] cursor-help"
-            title={
-              activeMode === 'aggregate'
-                ? 'Aggregate mode: fixed 100ms ticks, Little’s Law back-pressure, supporting up to 1M req/s'
-                : 'Discrete mode: individual request event scheduling with Poisson arrivals'
-            }
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                activeMode === 'aggregate' ? 'bg-amber-400' : 'bg-cyan-400'
-              }`}
-            />
-            <span className="text-[11px] uppercase font-bold text-white tracking-wider">
-              {trafficConfig.mode === 'auto' ? `Auto (${activeMode})` : activeMode}
-            </span>
           </div>
 
           {/* Traffic Modal Button with current traffic summary */}
@@ -229,62 +205,54 @@ export const ControlBar: React.FC = () => {
             type="button"
             onClick={openTrafficModal}
             title="Configure traffic rate, patterns, and execution mode"
-            className="h-8 px-3 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center gap-1.5"
+            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-white transition-all flex items-center gap-1.5"
           >
-            <span>⚡</span>
-            <span className="font-semibold">{formatRps(rps, false)}</span>
-            <span className="text-[10px] text-[var(--color-text-muted)] capitalize">
+            <span>{formatRps(rps, false)}</span>
+            <span className="text-[10px] text-[#A1A1AA] capitalize">
               ({trafficConfig.pattern})
             </span>
           </button>
 
-          {/* Sampled indicator in Aggregate mode */}
-          {activeMode === 'aggregate' && (
-            <span className="text-[10px] text-[var(--color-text-faint)] hidden lg:inline">
-              • 20 sampled/s
-            </span>
-          )}
-
           {/* Seed Input */}
           <div className="flex items-center gap-1">
             <input
-              type="number"
+              type="text"
               value={seed}
-              disabled={status === 'running'}
-              onChange={(e) => setSeed(Number(e.target.value))}
-              className="w-14 h-7 px-1 rounded bg-[#18181b] border border-[#3f3f46] text-white font-mono text-[11px] outline-none text-center disabled:opacity-50"
+              onChange={(e) => setSeed(Number(e.target.value) || 0)}
+              title="Simulation deterministic PRNG Seed"
+              placeholder="Seed"
+              className="w-16 h-7 px-1.5 bg-[#1A1A1D] border border-[#3A3A3E] text-white rounded text-[10px] font-mono focus:border-white focus:outline-none"
             />
             <button
               type="button"
-              disabled={status === 'running'}
               onClick={randomizeSeed}
-              title="Generate random seed"
-              className="h-7 px-1.5 rounded bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all disabled:opacity-50"
+              title="Generate new random seed"
+              className="w-7 h-7 bg-[#3A3A3E] hover:bg-[#48484E] text-white rounded flex items-center justify-center text-xs"
             >
               🎲
             </button>
           </div>
 
-          <div className="h-5 w-px bg-[#27272a] mx-0.5" />
-
-          {/* Event Log Toggle */}
+          {/* Event Log Drawer Button */}
           <button
             type="button"
             onClick={toggleEventLog}
-            className={`h-8 px-2.5 rounded-lg border text-xs font-mono transition-all flex items-center gap-1.5 ${
+            title={isEventLogOpen ? 'Close Event Log' : 'Open Event Log'}
+            className={`h-7 px-2.5 rounded transition-all ${
               isEventLogOpen
-                ? 'bg-white text-black font-semibold border-white shadow-sm'
-                : 'bg-[#18181b] hover:bg-[#222226] text-[var(--color-text-secondary)] hover:text-white border-[#3f3f46] hover:border-white'
+                ? 'bg-[#D9541E] text-white font-bold'
+                : 'bg-[#3A3A3E] hover:bg-[#48484E] text-white'
             }`}
           >
-            <span>📜</span>
-            <span>Log</span>
+            Log
           </button>
         </div>
       </footer>
 
       {/* Traffic Configuration Modal */}
-      {isTrafficModalOpen && <TrafficModal />}
+      <TrafficModal />
     </>
   );
 };
+
+export default ControlBar;
