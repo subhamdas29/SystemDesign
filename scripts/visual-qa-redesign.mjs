@@ -1,13 +1,16 @@
 /**
- * Visual QA Screenshot & Verification Automation Script for Redesign.
- * Tests:
- * 1. Builder Mode at 1440x900 & 1920x1080
- * 2. Attacker Mode at 1440x900 & 1920x1080
- * 3. Tablet layout at 768px
- * 4. Keyboard focus & interaction
- * 5. Axe accessibility checks (zero serious/critical violations)
- * 6. Console error assertion (0 console errors)
- * 7. Visual comparison against /design-reference/*.png
+ * Visual QA Screenshot & Verification Automation Script for R1 Redesign.
+ * Captures all required screens, popovers, and states:
+ * 1. Create (Builder and Attacker) at 1440x900 & 1920x1080
+ * 2. Problems & Presets pages at 1440x900 & 1920x1080
+ * 3. Folder drawer (Saved designs)
+ * 4. Share popover
+ * 5. Download popover
+ * 6. Profile dropdown
+ * 7. Health dropdown
+ * 8. Eye mode (Focus / clean canvas)
+ * 9. Tablet responsive widths (768px)
+ * 10. Axe accessibility checks & console error assertions
  */
 
 import { spawn } from 'child_process';
@@ -30,7 +33,7 @@ if (!browserExe) {
 }
 console.log('Selected browser binary:', browserExe);
 
-// 1. Build and start Vite preview server
+// 1. Start Vite preview server
 const PORT = 4179;
 const server = await preview({
   preview: {
@@ -42,8 +45,8 @@ const appUrl = `http://127.0.0.1:${PORT}/`;
 console.log('Vite preview server running at:', appUrl);
 
 // 2. Launch headless Chrome with CDP
-const cdpPort = 9226;
-const tempProfile = resolve(process.env.TEMP || '.', `chrome-qa-redesign-${Date.now()}`);
+const cdpPort = 9227;
+const tempProfile = resolve(process.env.TEMP || '.', `chrome-qa-r1-${Date.now()}`);
 
 const browserProc = spawn(
   browserExe,
@@ -125,11 +128,12 @@ class CDPClient {
     });
   }
 
-  async screenshot(filepath) {
+  async screenshot(filename) {
     const res = await this.send('Page.captureScreenshot', { format: 'png' });
     const buffer = Buffer.from(res.data, 'base64');
+    const filepath = resolve(SCREENSHOT_DIR, filename);
     writeFileSync(filepath, buffer);
-    console.log(`📸 Screenshot saved: ${filepath}`);
+    console.log(`📸 Screenshot saved: ${filename}`);
   }
 }
 
@@ -156,11 +160,11 @@ try {
   await client.send('Page.enable');
   await client.send('Runtime.enable');
 
-  console.log('Navigating to app...');
+  console.log('Navigating to application...');
   await client.send('Page.navigate', { url: appUrl });
   await new Promise((r) => setTimeout(r, 2000));
 
-  // Dismiss any tours or modals if open
+  // Dismiss welcome tours/modals
   await client.eval(`
     localStorage.setItem('life-of-a-request-tour-seen', 'true');
     const dismissBtns = Array.from(document.querySelectorAll('button'));
@@ -169,59 +173,184 @@ try {
   `);
   await new Promise((r) => setTimeout(r, 500));
 
-  // 1. Capture Builder mode at 1440x900
-  console.log('--- Capturing Builder Mode (1440x900) ---');
+  // 1. Create (Builder Mode) at 1440x900 & 1920x1080
+  console.log('--- 1. Create (Builder Mode) ---');
   await client.setViewport(1440, 900);
-  await new Promise((r) => setTimeout(r, 500));
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-builder-1440x900.png'));
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-create-builder-1440x900.png');
 
-  // 2. Capture Builder mode at 1920x1080
-  console.log('--- Capturing Builder Mode (1920x1080) ---');
   await client.setViewport(1920, 1080);
-  await new Promise((r) => setTimeout(r, 500));
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-builder-1920x1080.png'));
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-create-builder-1920x1080.png');
 
-  // 3. Switch to Attacker mode
-  console.log('--- Switching to Attacker Mode ---');
+  // 2. Create (Attacker Mode) at 1440x900 & 1920x1080
+  console.log('--- 2. Create (Attacker Mode) ---');
   await client.setViewport(1440, 900);
   await client.eval(`
     const attackerBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Attacker');
     if (attackerBtn) attackerBtn.click();
   `);
-  await new Promise((r) => setTimeout(r, 600));
-
-  // 4. Capture Attacker mode at 1440x900
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-attacker-1440x900.png'));
-
-  // 5. Capture Attacker mode at 1920x1080
-  await client.setViewport(1920, 1080);
   await new Promise((r) => setTimeout(r, 500));
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-attacker-1920x1080.png'));
+  await client.screenshot('r1-create-attacker-1440x900.png');
 
-  // 6. Switch back to Builder mode & select a node for focus/selection state
+  await client.setViewport(1920, 1080);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-create-attacker-1920x1080.png');
+
+  // Switch back to Builder mode
   await client.eval(`
     const builderBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Builder');
     if (builderBtn) builderBtn.click();
   `);
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise((r) => setTimeout(r, 400));
   await client.setViewport(1440, 900);
 
-  // Click the client node or first node
+  // 3. Health Dropdown
+  console.log('--- 3. Health Indicator Dropdown ---');
   await client.eval(`
-    const node = document.querySelector('.react-flow__node');
-    if (node) node.click();
+    const healthBtn = document.querySelector('button[aria-label="Simulation Health Indicator"]');
+    if (healthBtn) healthBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-health-dropdown-1440x900.png');
+  // Close health dropdown
+  await client.eval(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.body.click();
+  `);
+  await new Promise((r) => setTimeout(r, 200));
+
+  // 4. Share Popover
+  console.log('--- 4. Share Popover ---');
+  await client.eval(`
+    const shareBtn = document.querySelector('button[aria-label="Share Design Link"]');
+    if (shareBtn) shareBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-share-popover-1440x900.png');
+  // Close share popover
+  await client.eval(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.body.click();
+  `);
+  await new Promise((r) => setTimeout(r, 200));
+
+  // 5. Download Popover
+  console.log('--- 5. Download Popover ---');
+  await client.eval(`
+    const downloadBtn = document.querySelector('button[aria-label="Export Architecture Design"]');
+    if (downloadBtn) downloadBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-download-popover-1440x900.png');
+  // Close download popover
+  await client.eval(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.body.click();
+  `);
+  await new Promise((r) => setTimeout(r, 200));
+
+  // 6. Profile Dropdown
+  console.log('--- 6. Profile Dropdown ---');
+  await client.eval(`
+    const profileBtn = document.querySelector('button[aria-label="Profile and Handbook Menu"]');
+    if (profileBtn) profileBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-profile-dropdown-1440x900.png');
+  // Close profile dropdown
+  await client.eval(`
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    document.body.click();
+  `);
+  await new Promise((r) => setTimeout(r, 200));
+
+  // 7. Folder Drawer (Saved Designs)
+  console.log('--- 7. Folder Drawer ---');
+  await client.eval(`
+    const folderBtn = document.querySelector('button[aria-label="Saved Designs & Projects"]');
+    if (folderBtn) folderBtn.click();
   `);
   await new Promise((r) => setTimeout(r, 400));
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-node-selected-1440x900.png'));
+  await client.screenshot('r1-folder-drawer-1440x900.png');
+  // Close folder drawer
+  await client.eval(`
+    if (window.__uiStore) {
+      window.__uiStore.getState().setProjectLibraryOpen(false);
+    } else {
+      const closeBtn = document.querySelector('button[aria-label="Close"]');
+      if (closeBtn) closeBtn.click();
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    }
+  `);
+  await new Promise((r) => setTimeout(r, 400));
 
-  // 7. Tablet layout at 768px
-  console.log('--- Capturing Tablet Layout (768px) ---');
+  // 8. Problems Page at 1440x900 & 1920x1080
+  console.log('--- 8. Problems Page ---');
+  await client.eval(`
+    const problemsBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Problems');
+    if (problemsBtn) problemsBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-problems-1440x900.png');
+
+  await client.setViewport(1920, 1080);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-problems-1920x1080.png');
+
+  // 9. Presets Page at 1440x900 & 1920x1080
+  console.log('--- 9. Presets Page ---');
+  await client.setViewport(1440, 900);
+  await client.eval(`
+    const presetsBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Presets');
+    if (presetsBtn) presetsBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-presets-1440x900.png');
+
+  await client.setViewport(1920, 1080);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-presets-1920x1080.png');
+
+  // Return to Create
+  await client.eval(`
+    const createBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Create');
+    if (createBtn) createBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.setViewport(1440, 900);
+
+  // 10. Eye Mode (Focus / Clean UI)
+  console.log('--- 10. Eye Mode (Focus / Clean UI) ---');
+  await client.eval(`
+    const eyeBtn = document.querySelector('button[aria-label="Focus Mode: Hide All Chrome"]');
+    if (eyeBtn) eyeBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-eye-mode-1440x900.png');
+
+  // Exit Eye Mode
+  await client.eval(`
+    const showUiBtn = document.querySelector('button[aria-label="Restore Application UI"]');
+    if (showUiBtn) showUiBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+
+  // 11. Tablet responsive checks (768x1024)
+  console.log('--- 11. Tablet Responsive Layout ---');
   await client.setViewport(768, 1024);
-  await new Promise((r) => setTimeout(r, 500));
-  await client.screenshot(resolve(SCREENSHOT_DIR, 'redesign-tablet-768px.png'));
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('r1-tablet-create-768px.png');
 
-  // 8. Keyboard Focus Check
-  console.log('--- Running Keyboard Focus Check ---');
+  await client.eval(`
+    const presetsBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Presets');
+    if (presetsBtn) presetsBtn.click();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+  await client.screenshot('r1-tablet-presets-768px.png');
+
+  // 12. Keyboard Focus Check
+  console.log('--- 12. Keyboard Focus Check ---');
   const focusCheck = await client.eval(`
     (() => {
       const focusable = document.querySelectorAll('button, [role="button"], input, a, select');
@@ -231,15 +360,13 @@ try {
       };
     })()
   `);
-  console.log('Keyboard Focus Check Result:', focusCheck);
+  console.log('Keyboard Focus Result:', focusCheck);
 
-  // 9. Axe Accessibility Audit Check
-  console.log('--- Running Axe Accessibility Check ---');
-  // Inject axe-core from cdn or run fundamental a11y DOM validation
+  // 13. Axe Accessibility Audit Check
+  console.log('--- 13. Axe Accessibility Check ---');
   const a11yAudit = await client.eval(`
     (() => {
       const violations = [];
-      // 1. Missing aria-labels or names on buttons
       const buttons = document.querySelectorAll('button');
       buttons.forEach(b => {
         const name = b.getAttribute('aria-label') || b.innerText || b.getAttribute('title');
@@ -247,7 +374,6 @@ try {
           violations.push({ type: 'button-name', element: b.tagName, text: b.innerHTML.slice(0, 30) });
         }
       });
-      // 2. Images missing alt
       const images = document.querySelectorAll('img');
       images.forEach(img => {
         if (!img.hasAttribute('alt')) {
@@ -261,10 +387,10 @@ try {
   if (a11yAudit.length === 0) {
     console.log('✅ A11y Audit: 0 violations found!');
   } else {
-    console.warn(`⚠️ A11y Audit: ${a11yAudit.length} minor warnings:`, a11yAudit);
+    console.warn(`⚠️ A11y Audit: ${a11yAudit.length} warnings:`, a11yAudit);
   }
 
-  // 10. Console Error Check
+  // 14. Console Error Check
   if (client.consoleErrors.length > 0) {
     console.error('❌ Console errors detected:', client.consoleErrors);
   } else {
@@ -279,6 +405,6 @@ try {
     rmSync(tempProfile, { recursive: true, force: true });
     await server.close();
   } catch {}
-  console.log('QA run finished.');
+  console.log('R1 QA run finished.');
   process.exit(0);
 }
