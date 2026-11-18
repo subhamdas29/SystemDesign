@@ -378,6 +378,18 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
         campaign,
       },
       {
+        onSnapshot: (s) => {
+          set({
+            simTimeMs: s.timeMs,
+            runtimeNodes: s.runtimeNodes,
+            counters: s.counters,
+            latencySummary: s.latencySummary,
+            recentEvents: s.recentEvents,
+            activeFailures: s.activeFailures ?? [],
+            amplificationFactor: s.amplificationFactor ?? 1.0,
+            runtimeBottleneck: s.bottleneck ?? null,
+          });
+        },
         onError: (err) => {
           set({ simulationError: err, status: 'paused' });
         },
@@ -385,27 +397,29 @@ export const useSimulationStore = create<SimulationStoreState>((set, get) => ({
     );
     lastGraphVersion = graph.version;
 
-    const snap = activeClient.getLatestSnapshot()!;
-    const activeMode = snap.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete');
+    const snap = activeClient.getLatestSnapshot();
+    const activeMode = snap?.mode ?? (trafficConfig.peakRps > 1000 ? 'aggregate' : 'discrete');
     const displayMode = activeMode === 'aggregate' ? 'aggregate' : 'individual';
 
     // Initialize metrics store for fresh run
     useMetricsStore.getState().clearMetrics();
-    const initialSample = emitMetricsSample(snap, graph, null);
-    useMetricsStore.getState().ingestSample(initialSample);
-    lastSnapshot = snap;
+    if (snap) {
+      const initialSample = emitMetricsSample(snap, graph, null);
+      useMetricsStore.getState().ingestSample(initialSample);
+      lastSnapshot = snap;
+    }
 
     set({
       status: 'running',
-      simTimeMs: snap.timeMs,
-      runtimeNodes: snap.runtimeNodes,
-      counters: snap.counters,
-      latencySummary: snap.latencySummary,
-      recentEvents: snap.recentEvents,
+      simTimeMs: snap ? snap.timeMs : 0,
+      runtimeNodes: snap ? snap.runtimeNodes : {},
+      counters: snap ? snap.counters : initialCounters,
+      latencySummary: snap ? snap.latencySummary : initialLatency,
+      recentEvents: snap ? snap.recentEvents : [],
       activeSamplePackets: [],
-      activeFailures: snap.activeFailures ?? [],
-      amplificationFactor: snap.amplificationFactor ?? 1.0,
-      runtimeBottleneck: snap.bottleneck ?? null,
+      activeFailures: snap?.activeFailures ?? [],
+      amplificationFactor: snap?.amplificationFactor ?? 1.0,
+      runtimeBottleneck: snap?.bottleneck ?? null,
       activeMode,
       displayMode,
       simulationError: null,

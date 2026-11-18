@@ -146,7 +146,7 @@ export const InventoryPanel: React.FC = () => {
                             {rule.label}
                           </div>
                           <div
-                            className="text-[10px] text-[#8E8E8E] truncate leading-tight mt-0.5"
+                            className="text-[10px] text-[#8E8E8E] line-clamp-2 break-words leading-tight mt-0.5"
                             title={desc}
                           >
                             {desc}

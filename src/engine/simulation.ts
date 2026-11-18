@@ -630,16 +630,24 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
       const override = nodeOverrides.get(id);
       const effectiveCap = override?.capacityFactor !== undefined ? cap * override.capacityFactor : cap;
 
-      const util = effectiveCap > 0 ? Math.min(1.0, node.busySlots / effectiveCap) : 1.0;
-      const nodeHealth = override?.health ?? (node.config as { health?: string }).health;
-      const backendState = lbBackendStates.get(id);
-
       const attackStats = nodeAttackStats.get(id);
       const nodeTotal = (attackStats?.maliciousInflow ?? 0) + (attackStats?.legitimateInflow ?? 0);
       const nodeShare =
         nodeTotal > 0
           ? Math.round(((attackStats?.maliciousInflow ?? 0) / nodeTotal) * 1000) / 10
           : 0;
+
+      const timeSec = Math.max(0.1, simTimeMs / 1000);
+      const computedRps = Math.round(nodeTotal / timeSec);
+
+      // Queueing theory utilization: rho = arrival rate / capacity
+      const rpsUtil = effectiveCap > 0 ? Math.min(1.0, computedRps / effectiveCap) : (node.busySlots > 0 ? 1.0 : 0.0);
+      const concurrencyLimit = (node.config as { concurrencyLimit?: number })?.concurrencyLimit;
+      const slotUtil = concurrencyLimit && concurrencyLimit > 0 ? Math.min(1.0, node.busySlots / concurrencyLimit) : 0;
+      const util = Math.max(rpsUtil, slotUtil);
+
+      const nodeHealth = override?.health ?? (node.config as { health?: string }).health;
+      const backendState = lbBackendStates.get(id);
 
       const cbState = circuitBreakerStates.get(id);
       const asState = autoscalingStates.get(id);
@@ -650,9 +658,6 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
           (wafCfg.rulesets?.botProtection ? 1 : 0) +
           (wafCfg.rulesets?.rateBasedRules ? 1 : 0)
         : undefined;
-
-      const timeSec = Math.max(0.1, simTimeMs / 1000);
-      const computedRps = Math.round(nodeTotal / timeSec);
 
       runtimeNodes[id] = {
         ...node.state,

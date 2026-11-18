@@ -172,13 +172,13 @@ const CanvasInner: React.FC = () => {
     };
   }, [graph.version, fitView]);
 
-  // Re-fit graph (animated, 200 ms ease-out) when Inventory or Inspector opens/closes (Item 9b)
+  // Re-fit graph (animated, 200 ms ease-out) when Inventory, Inspector, or Attacker mode changes (Item 9b, 17)
   useEffect(() => {
     const timer = setTimeout(() => {
       fitView({ padding: 0.2, minZoom: 0.6, maxZoom: 1.2, duration: 200 });
     }, 60);
     return () => clearTimeout(timer);
-  }, [isInventoryOpen, isInspectorOpen, fitView]);
+  }, [isInventoryOpen, isInspectorOpen, isAttackerMode, fitView]);
 
   const handleFitAll = () => {
     fitView({ padding: 0.2, minZoom: 0.7, maxZoom: 1.2, duration: 300 });
@@ -249,10 +249,10 @@ const CanvasInner: React.FC = () => {
       {/* Free-floating Health Indicator (Section 5 / A5) - Hidden in Eye mode */}
       {!isFocusMode && <HealthIndicator />}
 
-      {/* Aggregate Flow readout badge (Item 13) */}
+      {/* Aggregate Flow readout (Item 20: unboxed typography, no border, no background, orange dot only) */}
       {!isFocusMode && displayMode === 'aggregate' && (status === 'running' || status === 'paused') && (
-        <div className="absolute top-4 left-6 z-10 px-3 py-1 rounded bg-[#15181E] border border-[#2A2E39] font-mono text-[11px] text-[#F3EEE3] shadow-md flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#D9541E] animate-pulse" />
+        <div className="absolute top-4 left-6 z-10 font-mono text-xs text-[#F3EEE3] flex items-center gap-2 select-none">
+          <span className="w-2 h-2 rounded-full bg-[#D9541E] inline-block shrink-0" />
           <span>Simulating {simRps.toLocaleString()} req/s | showing 20 sampled</span>
         </div>
       )}

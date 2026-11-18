@@ -73,6 +73,10 @@ export function createEngineClient(
   let isWorker = false;
   let worker: Worker | null = null;
   let latestSnapshot: SimulationSnapshot | null = null;
+  try {
+    const tempSim = createSimulation(initialConfig);
+    latestSnapshot = tempSim.getSnapshot();
+  } catch {}
 
   // Detect worker support
   const hasWorkerSupport =

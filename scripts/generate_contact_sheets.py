@@ -48,14 +48,15 @@ GROUPS = [
         ]
     },
     {
-        'title': 'R2 Simulation Runs (100 RPS, 100k RPS Aggregate Flow, Paused Freeze)',
+        'title': 'R2 Simulation Runs & States (100 RPS, 100k Flow, Paused Freeze, Severity States)',
         'output': 'contact-sheet-r2-simulation.png',
         'items': [
             ('redesign-sim-100rps-1440x900.png', '100 RPS Running at ~5s ("Pause", Live Stats)'),
             ('redesign-sim-100krps-aggregate-1440x900.png', '100k RPS Aggregate Flow & Readout Badge'),
-            ('redesign-sim-paused-freeze-1440x900.png', 'Paused Run Frozen Mid-Edge ("Resume" Button)'),
-            ('r1-tablet-create-768px.png', 'Tablet 768px Canvas Layout'),
-            ('r1-tablet-presets-768px.png', 'Tablet 768px Presets Grid'),
+            ('redesign-sim-paused-freeze-1.png', 'Paused Run Frozen Mid-Edge (Shot 1)'),
+            ('redesign-sim-paused-freeze-2.png', 'Paused Run Frozen Mid-Edge (Shot 2, 1s Later)'),
+            ('redesign-severity-states-1440x900.png', 'Severity States (Degraded, Overloaded, Failed)'),
+            ('redesign-full-architecture-1440x900.png', 'Full Architecture Canvas View'),
         ]
     }
 ]

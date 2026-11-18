@@ -177,6 +177,11 @@ export const ConfigForm: React.FC<ConfigFormProps> = ({ node }) => {
               {tier}
             </button>
           ))}
+          {activePreset === 'custom' && (
+            <span className="text-xs capitalize py-0.5 text-[#F3EEE3] font-bold border-b-2 border-[#D9541E] select-none">
+              Custom
+            </span>
+          )}
         </div>
       </div>
 

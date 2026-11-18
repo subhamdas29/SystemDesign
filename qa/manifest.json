@@ -1,0 +1,286 @@
+{
+  "commitHash": "51797c107ef12af47fb2be478eed4803eccd03b9",
+  "generatedAt": "2026-11-18T21:32:00.511Z",
+  "totalScreenshots": 31,
+  "files": [
+    {
+      "filename": "r1-create-builder-1440x900.png",
+      "path": "qa/screenshots/r1-create-builder-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "App shell & top nav in Builder Mode (1440x900)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:39.125Z"
+    },
+    {
+      "filename": "r1-create-builder-1920x1080.png",
+      "path": "qa/screenshots/r1-create-builder-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "App shell & top nav in Builder Mode (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:39.705Z"
+    },
+    {
+      "filename": "r1-create-attacker-1440x900.png",
+      "path": "qa/screenshots/r1-create-attacker-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Attacker Mode with Threat Sources node (1440x900)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:40.475Z"
+    },
+    {
+      "filename": "r1-create-attacker-1920x1080.png",
+      "path": "qa/screenshots/r1-create-attacker-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Attacker Mode with Threat Sources node (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:41.039Z"
+    },
+    {
+      "filename": "r1-health-dropdown-1440x900.png",
+      "path": "qa/screenshots/r1-health-dropdown-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Health dropdown unboxed typography",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:41.932Z"
+    },
+    {
+      "filename": "r1-share-popover-1440x900.png",
+      "path": "qa/screenshots/r1-share-popover-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Share popover sitting above health indicator without text bleed",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:42.556Z"
+    },
+    {
+      "filename": "r1-download-popover-1440x900.png",
+      "path": "qa/screenshots/r1-download-popover-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Export and Download popover",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:43.202Z"
+    },
+    {
+      "filename": "r1-profile-dropdown-1440x900.png",
+      "path": "qa/screenshots/r1-profile-dropdown-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Profile menu with Guide, Tutorials, and Legacy panels",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:43.831Z"
+    },
+    {
+      "filename": "r1-folder-drawer-1440x900.png",
+      "path": "qa/screenshots/r1-folder-drawer-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Saved designs drawer with flat dark scrim",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:44.562Z"
+    },
+    {
+      "filename": "r1-problems-1440x900.png",
+      "path": "qa/screenshots/r1-problems-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Problems coming soon page (1440x900)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:45.448Z"
+    },
+    {
+      "filename": "r1-problems-1920x1080.png",
+      "path": "qa/screenshots/r1-problems-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Problems coming soon page (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:45.809Z"
+    },
+    {
+      "filename": "r1-presets-1440x900.png",
+      "path": "qa/screenshots/r1-presets-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Presets page grid (1440x900)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:46.272Z"
+    },
+    {
+      "filename": "r1-presets-1920x1080.png",
+      "path": "qa/screenshots/r1-presets-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Presets page grid (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:46.660Z"
+    },
+    {
+      "filename": "r1-eye-mode-1440x900.png",
+      "path": "qa/screenshots/r1-eye-mode-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Eye mode focus view with hidden chrome and hidden canvas controls",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:47.623Z"
+    },
+    {
+      "filename": "r1-tablet-create-768px.png",
+      "path": "qa/screenshots/r1-tablet-create-768px.png",
+      "width": 768,
+      "height": 1024,
+      "description": "Tablet responsive create view (768px)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:48.478Z"
+    },
+    {
+      "filename": "r1-tablet-presets-768px.png",
+      "path": "qa/screenshots/r1-tablet-presets-768px.png",
+      "width": 768,
+      "height": 1024,
+      "description": "Tablet responsive presets grid (768px)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:49.166Z"
+    },
+    {
+      "filename": "redesign-builder-1440x900.png",
+      "path": "qa/screenshots/redesign-builder-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Canvas builder mode (1440x900) with icon-only nodes and dotted routed edges",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:50.036Z"
+    },
+    {
+      "filename": "redesign-builder-1920x1080.png",
+      "path": "qa/screenshots/redesign-builder-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Canvas builder mode (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:50.592Z"
+    },
+    {
+      "filename": "redesign-attacker-1440x900.png",
+      "path": "qa/screenshots/redesign-attacker-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Attacker mode canvas with Threat Sources node and entry edge (1440x900)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:51.349Z"
+    },
+    {
+      "filename": "redesign-attacker-1920x1080.png",
+      "path": "qa/screenshots/redesign-attacker-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Attacker mode canvas (1920x1080)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:51.881Z"
+    },
+    {
+      "filename": "redesign-node-selected-1440x900.png",
+      "path": "qa/screenshots/redesign-node-selected-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Typographic Inspector panel for App Server (no cards, plain language copy)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:52.864Z"
+    },
+    {
+      "filename": "redesign-edge-selected-1440x900.png",
+      "path": "qa/screenshots/redesign-edge-selected-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Edge Inspector panel with plain text presets and offset latency label",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:53.405Z"
+    },
+    {
+      "filename": "redesign-inventory-drawer-1440x900.png",
+      "path": "qa/screenshots/redesign-inventory-drawer-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Inventory drawer with line-art icons and 2-line wrapped descriptions",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:53.954Z"
+    },
+    {
+      "filename": "redesign-sim-100rps-1440x900.png",
+      "path": "qa/screenshots/redesign-sim-100rps-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "100 RPS simulation run at 5000ms (\"Pause\", packets on edge paths, utilization >0%)",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:54.908Z"
+    },
+    {
+      "filename": "redesign-running-simulation-1440x900.png",
+      "path": "qa/screenshots/redesign-running-simulation-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Running simulation with live metric indicators",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:55.085Z"
+    },
+    {
+      "filename": "redesign-sim-100krps-aggregate-1440x900.png",
+      "path": "qa/screenshots/redesign-sim-100krps-aggregate-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "100k RPS aggregate flow simulation with unboxed badge",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:56.256Z"
+    },
+    {
+      "filename": "redesign-sim-paused-freeze-1.png",
+      "path": "qa/screenshots/redesign-sim-paused-freeze-1.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Paused simulation shot 1: packets frozen mid-edge with \"Resume\" button",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:57.476Z"
+    },
+    {
+      "filename": "redesign-sim-paused-freeze-2.png",
+      "path": "qa/screenshots/redesign-sim-paused-freeze-2.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Paused simulation shot 2: identical packet positions 1 second later",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:58.614Z"
+    },
+    {
+      "filename": "redesign-tablet-768px.png",
+      "path": "qa/screenshots/redesign-tablet-768px.png",
+      "width": 768,
+      "height": 1024,
+      "description": "Tablet 768px showing overlay inspector drawer and consistent controls",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:59.303Z"
+    },
+    {
+      "filename": "redesign-severity-states-1440x900.png",
+      "path": "qa/screenshots/redesign-severity-states-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Canvas showcasing all node severity states: Normal, Degraded, Overloaded, Failed",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:31:59.968Z"
+    },
+    {
+      "filename": "redesign-full-architecture-1440x900.png",
+      "path": "qa/screenshots/redesign-full-architecture-1440x900.png",
+      "width": 1440,
+      "height": 900,
+      "description": "Full clean architecture canvas view",
+      "assertionsPassed": true,
+      "capturedAt": "2026-11-18T21:32:00.505Z"
+    }
+  ]
+}

@@ -1,8 +1,9 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { EdgeProps, getSmoothStepPath, BaseEdge, EdgeLabelRenderer } from '@xyflow/react';
 import { useSimulationStore, selectActiveFailures } from '../../store/simulationStore';
 import { useUiStore, selectSelectedEdgeId } from '../../store/uiStore';
 import { EdgeLatencyConfig } from '../../types';
+import { registerEdgePath } from '../animation/edgePathGeometry';
 
 export const CustomEdge: React.FC<EdgeProps> = memo(({
   id,
@@ -28,6 +29,11 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
     borderRadius: 8,
   });
 
+  // Register exact rendered SVG path string for packet arc-length routing
+  useEffect(() => {
+    registerEdgePath(id, edgePath);
+  }, [id, edgePath]);
+
   const latency = (data as { latency?: EdgeLatencyConfig })?.latency;
   const isThreatEdge = source === 'threat-source' || target === 'threat-source' || (data as { isThreatEdge?: boolean })?.isThreatEdge;
   const activeFailures = useSimulationStore(selectActiveFailures);
@@ -36,10 +42,6 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
 
   const isSelected = selectedEdgeId === id;
   const edgeFailure = activeFailures.find((f) => f.targetId === id);
-
-  const hasLatencyCustomization = Boolean(
-    latency && (latency.baseLatencyMs > 1 || (latency.packetLossPct ?? 0) > 0)
-  );
 
   // Stroke color: orange for threat edge or selected; failure red; nominal white
   const strokeColor = isThreatEdge
@@ -50,8 +52,8 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
     ? '#FF5C5C'
     : '#FFFFFF';
 
-  // Show edge latency ONLY on hover or when edge is selected per A7
-  const showLatencyChip = (isHovered || isSelected) && (hasLatencyCustomization || edgeFailure);
+  // Show edge latency ONLY on hover or when edge is selected per Item 19
+  const showLatencyChip = isHovered || isSelected;
 
   return (
     <g
@@ -84,6 +86,7 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
         }}
       />
 
+      {/* Latency label offset above edge with background gap (Item 19) */}
       {showLatencyChip && (
         <EdgeLabelRenderer>
           <div
@@ -93,19 +96,17 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
             }}
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 6}px)`,
               pointerEvents: 'all',
             }}
             className="cursor-pointer z-10 font-mono"
           >
-            {hasLatencyCustomization && latency && (
-              <span className="text-[10px] font-mono text-[#F3EEE3] select-none tracking-tight">
-                {latency.baseLatencyMs}ms
-              </span>
-            )}
+            <span className="text-[10px] font-mono text-[#F3EEE3] bg-[#0B0B0D] px-1.5 py-0.5 select-none tracking-tight">
+              {latency?.baseLatencyMs ?? 5}ms
+            </span>
 
             {edgeFailure && (
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#15181E] text-[#FF5C5C] border border-[#FF5C5C] ml-1">
+              <span className="text-[9px] font-mono px-1.5 py-0.5 bg-[#0B0B0D] text-[#FF5C5C] ml-1">
                 FAIL
               </span>
             )}

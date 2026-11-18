@@ -4,6 +4,7 @@
  */
 
 import { create } from 'zustand';
+import { useAttackStore } from './attackStore';
 
 export type AppMode = 'builder' | 'attacker';
 export type NavTab = 'create' | 'problems' | 'presets' | 'interview';
@@ -106,7 +107,10 @@ export const useUiStore = create<UiStoreState>((set) => ({
   draggingSwapNodeId: null,
   hint: null,
 
-  setMode: (mode: AppMode) => set({ mode }),
+  setMode: (mode: AppMode) => {
+    useAttackStore.getState().setAttackerMode(mode === 'attacker');
+    set({ mode });
+  },
   setActiveNavTab: (activeNavTab: NavTab) => set({ activeNavTab }),
   setFocusMode: (isFocusMode: boolean) => set({ isFocusMode }),
   toggleFocusMode: () => set((state) => ({ isFocusMode: !state.isFocusMode })),
