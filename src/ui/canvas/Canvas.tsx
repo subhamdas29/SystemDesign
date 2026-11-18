@@ -12,6 +12,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { CustomNode } from './CustomNode';
 import { CustomEdge } from './CustomEdge';
+import { HealthIndicator } from './HealthIndicator';
 import { AnimationCanvas } from '../animation/AnimationCanvas';
 import { useGraphStore, selectGraph, selectNodes, selectEdges } from '@store';
 import { useUiStore, selectDraggingSwapNodeId } from '@store';
@@ -222,6 +223,9 @@ const CanvasInner: React.FC = () => {
 
   return (
     <div className="w-full h-full relative" style={{ backgroundColor: '#0B0B0D' }}>
+      {/* Free-floating Health Indicator (Section 5) */}
+      <HealthIndicator />
+
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}

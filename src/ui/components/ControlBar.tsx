@@ -91,7 +91,7 @@ export const ControlBar: React.FC = () => {
             disabled={!validation.valid}
             title={!validation.valid ? `Cannot simulate: ${validation.errors[0]}` : 'Play / Pause simulation'}
             className={`
-              h-7 px-3 rounded text-[11px] font-mono font-medium flex items-center gap-1.5 transition-all
+              h-7 px-3 rounded text-[11px] font-mono font-medium flex items-center justify-center transition-all cursor-pointer
               ${
                 !validation.valid
                   ? 'bg-[#1F1F22] text-[#52525B] cursor-not-allowed'
@@ -101,7 +101,6 @@ export const ControlBar: React.FC = () => {
               }
             `}
           >
-            <span>{status === 'running' ? '⏸' : '▶'}</span>
             <span>{status === 'running' ? 'Pause' : status === 'paused' ? 'Resume' : 'Play'}</span>
           </button>
 
@@ -227,9 +226,9 @@ export const ControlBar: React.FC = () => {
               type="button"
               onClick={randomizeSeed}
               title="Generate new random seed"
-              className="w-7 h-7 bg-[#3A3A3E] hover:bg-[#48484E] text-white rounded flex items-center justify-center text-xs"
+              className="px-2 h-7 bg-[#3A3A3E] hover:bg-[#48484E] text-white rounded flex items-center justify-center text-[10px] font-mono cursor-pointer"
             >
-              🎲
+              Rnd
             </button>
           </div>
 

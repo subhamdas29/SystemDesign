@@ -44,8 +44,6 @@ export const Dashboard: React.FC = () => {
     : { status: 'healthy' as const, reason: 'Awaiting simulation traffic...', details: [] };
 
   const totalErrors = (system?.failedRps ?? 0) + (system?.rejectedRps ?? 0) + (system?.timedOutRps ?? 0);
-  const totalCompleted = (system?.successfulRps ?? 0) + totalErrors;
-  const errorRatePercent = totalCompleted > 0 ? Math.round((totalErrors / totalCompleted) * 100) : 0;
 
   // Keyboard accessibility: Escape collapses back to compact or collapsed
   useEffect(() => {
@@ -64,46 +62,9 @@ export const Dashboard: React.FC = () => {
       ? `Simulating ${peakRps.toLocaleString()} req/s | Showing 20 sampled requests`
       : `Simulating ${peakRps.toLocaleString()} req/s | Showing ${system?.inFlightRequests ?? 0} in-flight`;
 
-  // 1. Collapsed State: A small pill showing health indicator, incoming RPS, and error rate
+  // 1. Collapsed State: Handled by free-floating HealthIndicator in Canvas
   if (dashboardState === 'collapsed') {
-    return (
-      <aside
-        className="absolute top-4 right-6 z-20 select-none animate-in fade-in"
-        aria-label="Collapsed System Metrics Dashboard"
-      >
-        <button
-          type="button"
-          onClick={() => setDashboardState('compact')}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#18181B] border border-white/20 text-[11px] font-mono text-white/90 shadow-md hover:border-white/50 transition-colors cursor-pointer"
-          title="Click to expand dashboard"
-        >
-          {/* Health indicator dot */}
-          <span
-            className="w-2 h-2 rounded-full inline-block"
-            style={{
-              backgroundColor:
-                health.status === 'healthy'
-                  ? '#008604'
-                  : health.status === 'degraded'
-                    ? '#F59E0B'
-                    : '#D9541E',
-            }}
-          />
-          <span className="font-medium capitalize">{health.status}</span>
-          <span className="text-[#A1A1AA]">
-            {(system?.incomingRps ?? peakRps).toLocaleString()} RPS
-          </span>
-          <span
-            className={
-              errorRatePercent > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#A1A1AA]'
-            }
-          >
-            {errorRatePercent}% err
-          </span>
-          <span className="text-[#71717A] text-[9px]">▾</span>
-        </button>
-      </aside>
-    );
+    return null;
   }
 
   // 2. Compact State (Default): Overview cards with batched updates, top bar controls
