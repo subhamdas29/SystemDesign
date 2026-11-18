@@ -1,66 +1,44 @@
 /**
- * Infrastructure Component Icon Component.
- * Inlines normalized SVGs from /src/assets/icons with currentColor.
- * Matches the redesign aesthetic: crisp white line icons on dark canvas,
- * burnt orange for threats, 16px in nav/menus, ~48px on canvas.
+ * Infrastructure Component & UI Action Icon Component.
+ * Powered by the typed icon registry with fallback neutral placeholder and dev warnings.
+ * Adheres strictly to the redesign spec: 16px in nav/menus, ~48px on canvas, stroke-width 2.
  */
 
 import React from 'react';
 import type { ComponentType } from '@types';
-
-import apiGatewaySvg from '../../assets/icons/api-gateway.svg?raw';
-import appServerSvg from '../../assets/icons/app-server.svg?raw';
-import cdnSvg from '../../assets/icons/cdn.svg?raw';
-import clientSvg from '../../assets/icons/client.svg?raw';
-import databaseSvg from '../../assets/icons/database.svg?raw';
-import databaseReplicaSvg from '../../assets/icons/database-replica.svg?raw';
-import dnsSvg from '../../assets/icons/dns.svg?raw';
-import firewallSvg from '../../assets/icons/firewall.svg?raw';
-import kafkaSvg from '../../assets/icons/kafka.svg?raw';
-import loadBalancerSvg from '../../assets/icons/load-balancer.svg?raw';
-import nginxReverseProxySvg from '../../assets/icons/nginx-reverse-proxy.svg?raw';
-import rateLimiterSvg from '../../assets/icons/rate-limiter.svg?raw';
-import redisSvg from '../../assets/icons/redis.svg?raw';
-import threatSvg from '../../assets/icons/threat.svg?raw';
-import wafSvg from '../../assets/icons/waf.svg?raw';
-import workerSvg from '../../assets/icons/worker.svg?raw';
-
-const SVG_MAP: Record<string, string> = {
-  client: clientSvg,
-  dns: dnsSvg,
-  cdn: cdnSvg,
-  'load-balancer': loadBalancerSvg,
-  'api-gateway': apiGatewaySvg,
-  router: nginxReverseProxySvg,
-  'app-server': appServerSvg,
-  cache: redisSvg,
-  database: databaseSvg,
-  'database-replica': databaseReplicaSvg,
-  'message-queue': kafkaSvg,
-  worker: workerSvg,
-  'rate-limiter': rateLimiterSvg,
-  waf: wafSvg,
-  firewall: firewallSvg,
-  'threat-source': threatSvg,
-};
+import {
+  getComponentIconSvg,
+  getUiActionIconSvg,
+  ComponentIconKey,
+  UiActionIconKey,
+} from '../../design/iconRegistry';
 
 interface ComponentIconProps {
-  type: ComponentType | 'threat-source' | string;
+  type: ComponentType | ComponentIconKey | UiActionIconKey | string;
+  isAction?: boolean;
   className?: string;
   size?: number;
   color?: string;
+  overrideSvg?: string;
 }
 
 export const ComponentIcon: React.FC<ComponentIconProps> = ({
   type,
+  isAction = false,
   className = '',
   size = 48,
   color,
+  overrideSvg,
 }) => {
   const isThreat = type === 'threat-source' || type === 'threat';
   const defaultColor = isThreat ? '#D9541E' : '#FFFFFF';
   const finalColor = color ?? defaultColor;
-  const rawSvg = SVG_MAP[type] ?? clientSvg;
+
+  const rawSvg =
+    overrideSvg ??
+    (isAction
+      ? getUiActionIconSvg(type as UiActionIconKey)
+      : getComponentIconSvg(type as ComponentIconKey));
 
   return (
     <div
@@ -70,7 +48,7 @@ export const ComponentIcon: React.FC<ComponentIconProps> = ({
         height: size,
         color: finalColor,
       }}
-      title={`${type} component`}
+      title={`${type} icon`}
       dangerouslySetInnerHTML={{
         __html: rawSvg.replace(
           /<svg([^>]*)(width="[^"]*")?([^>]*)(height="[^"]*")?([^>]*)>/,
@@ -80,3 +58,5 @@ export const ComponentIcon: React.FC<ComponentIconProps> = ({
     />
   );
 };
+
+export default ComponentIcon;
