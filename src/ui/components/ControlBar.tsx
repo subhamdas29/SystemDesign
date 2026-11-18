@@ -2,9 +2,10 @@
  * Interactive Simulation Control Bar (Redesign).
  * Minimalist schematic bar at bottom (#2C2C2C, 45px height).
  * Font: Roboto Mono Medium 11px. Controls playback, scrub timeline, speed, RPS, and logs.
+ * A9: Prioritized overflow into a "More" popover on tablet 768px so the bottom bar never clips.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   useSimulationStore,
   selectSimPlayStatus,
@@ -14,7 +15,6 @@ import {
   selectSimRps,
   selectSimSeed,
   selectIsEventLogOpen,
-  selectTrafficConfig,
   selectVisualizationDisplayMode,
   SimulationSpeed,
 } from '../../store/simulationStore';
@@ -23,6 +23,9 @@ import { TrafficModal } from './TrafficModal';
 import { formatRps } from '../../design/formatters';
 
 export const ControlBar: React.FC = () => {
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+
   const status = useSimulationStore(selectSimPlayStatus);
   const speed = useSimulationStore(selectSimSpeed);
   const simTimeMs = useSimulationStore(selectSimTimeMs);
@@ -30,7 +33,6 @@ export const ControlBar: React.FC = () => {
   const rps = useSimulationStore(selectSimRps);
   const seed = useSimulationStore(selectSimSeed);
   const isEventLogOpen = useSimulationStore(selectIsEventLogOpen);
-  const trafficConfig = useSimulationStore(selectTrafficConfig);
   const displayMode = useSimulationStore(selectVisualizationDisplayMode);
   const setDisplayMode = useSimulationStore((s) => s.setDisplayMode);
 
@@ -40,7 +42,6 @@ export const ControlBar: React.FC = () => {
   const reset = useSimulationStore((s) => s.reset);
   const seek = useSimulationStore((s) => s.seek);
   const setSpeed = useSimulationStore((s) => s.setSpeed);
-  const setSeed = useSimulationStore((s) => s.setSeed);
   const randomizeSeed = useSimulationStore((s) => s.randomizeSeed);
   const toggleEventLog = useSimulationStore((s) => s.toggleEventLog);
   const tickFrame = useSimulationStore((s) => s.tickFrame);
@@ -48,6 +49,28 @@ export const ControlBar: React.FC = () => {
 
   const graph = useGraphStore(selectGraph);
   const validation = useGraphStore(selectValidation);
+
+  // Close "More" popover on outside click or Esc
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setIsMoreOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMoreOpen) {
+        setIsMoreOpen(false);
+      }
+    };
+    if (isMoreOpen) {
+      document.addEventListener('mousedown', handleOutside);
+      window.addEventListener('keydown', handleKey);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [isMoreOpen]);
 
   // UI-side requestAnimationFrame driving loop
   const lastFrameTimeRef = useRef<number | null>(null);
@@ -79,12 +102,12 @@ export const ControlBar: React.FC = () => {
   return (
     <>
       <footer
-        className="h-[45px] w-full px-5 flex items-center justify-between select-none z-30 font-mono text-[11px] border-t border-[#3A3A3E]"
+        className="h-[45px] w-full px-3 md:px-5 flex items-center justify-between select-none z-30 font-mono text-[11px] border-t border-[#3A3A3E] shrink-0"
         style={{ backgroundColor: '#2C2C2C' }}
         aria-label="Simulation Control Bar"
       >
         {/* Left: Playback Controls & Speed */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <button
             type="button"
             onClick={handlePlayToggle}
@@ -108,8 +131,8 @@ export const ControlBar: React.FC = () => {
             type="button"
             onClick={() => step(graph)}
             disabled={!validation.valid || status === 'running'}
-            title="Step forward one event / tick"
-            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            title="Step forward one tick"
+            className="h-7 px-2 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
           >
             Step
           </button>
@@ -118,15 +141,13 @@ export const ControlBar: React.FC = () => {
             type="button"
             onClick={() => reset(graph)}
             title="Reset simulation to t=0"
-            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#D4D4D4] hover:text-white transition-all"
+            className="h-7 px-2 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#D4D4D4] hover:text-white transition-all cursor-pointer"
           >
             Reset
           </button>
 
-          <div className="h-4 w-px bg-[#44444A] mx-1" />
-
-          {/* Speed Toggles: 1x, 2x, 4x, 8x */}
-          <div className="flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E]">
+          {/* Desktop-only speed toggles */}
+          <div className="hidden xl:flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E] ml-1">
             {([1, 2, 4, 8] as SimulationSpeed[]).map((s) => (
               <button
                 key={s}
@@ -145,8 +166,8 @@ export const ControlBar: React.FC = () => {
         </div>
 
         {/* Center: Timeline Scrubber */}
-        <div className="flex-1 max-w-sm mx-4 flex items-center gap-2.5">
-          <span className="font-mono text-[11px] text-white w-12 text-right">
+        <div className="flex-1 max-w-xs md:max-w-sm mx-2 md:mx-4 flex items-center gap-2 shrink min-w-0">
+          <span className="font-mono text-[10px] md:text-[11px] text-[#F3EEE3] w-10 md:w-12 text-right shrink-0">
             {Math.round(simTimeMs)}ms
           </span>
 
@@ -157,98 +178,175 @@ export const ControlBar: React.FC = () => {
             step={10}
             value={simTimeMs}
             onChange={(e) => seek(Number(e.target.value), graph)}
-            className="flex-1 accent-white h-1 bg-[#1A1A1D] rounded appearance-none cursor-pointer"
+            className="flex-1 accent-white h-1 bg-[#1A1A1D] rounded appearance-none cursor-pointer min-w-0"
+            aria-label="Simulation Time Slider"
           />
 
-          <span className="font-mono text-[11px] text-[#A1A1AA] w-12">
+          <span className="font-mono text-[10px] md:text-[11px] text-[#8F96A3] w-10 md:w-12 shrink-0">
             {durationMs}ms
           </span>
         </div>
 
-        {/* Right: Traffic Config Button, Mode Badge, Volume indicator & Log Toggle */}
-        <div className="flex items-center gap-2.5 text-[11px] font-mono">
-          {/* Display Mode Toggle: Individual vs Flow */}
-          <div
-            className="flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E]"
-            role="group"
-            aria-label="Visualization Mode"
-          >
-            <button
-              type="button"
-              onClick={() => setDisplayMode('individual')}
-              title="Individual Requests: discrete packet circles"
-              className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
-                displayMode === 'individual'
-                  ? 'bg-[#656565] text-white font-bold'
-                  : 'text-[#A1A1AA] hover:text-white'
-              }`}
-            >
-              Packets
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayMode('aggregate')}
-              title="Aggregate Flow: continuous particle stream"
-              className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
-                displayMode === 'aggregate'
-                  ? 'bg-[#656565] text-white font-bold'
-                  : 'text-[#A1A1AA] hover:text-white'
-              }`}
-            >
-              Flow
-            </button>
-          </div>
-
-          {/* Traffic Modal Button with current traffic summary */}
+        {/* Right: Traffic, Display Mode, Seed & More Overflow Popover */}
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0 text-[11px] font-mono">
+          {/* Traffic Modal Button (Always visible) */}
           <button
             type="button"
             onClick={openTrafficModal}
-            title="Configure traffic rate, patterns, and execution mode"
-            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-white transition-all flex items-center gap-1.5"
+            title="Configure traffic rate and patterns"
+            className="h-7 px-2.5 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#F3EEE3] transition-all flex items-center gap-1 cursor-pointer"
           >
             <span>{formatRps(rps, false)}</span>
-            <span className="text-[10px] text-[#A1A1AA] capitalize">
-              ({trafficConfig.pattern})
-            </span>
           </button>
 
-          {/* Seed Input */}
-          <div className="flex items-center gap-1">
-            <input
-              type="text"
-              value={seed}
-              onChange={(e) => setSeed(Number(e.target.value) || 0)}
-              title="Simulation deterministic PRNG Seed"
-              placeholder="Seed"
-              className="w-16 h-7 px-1.5 bg-[#1A1A1D] border border-[#3A3A3E] text-white rounded text-[10px] font-mono focus:border-white focus:outline-none"
-            />
+          {/* Desktop-only direct buttons */}
+          <div className="hidden lg:flex items-center gap-2">
+            {/* Display Mode: Packets vs Flow */}
+            <div className="flex items-center bg-[#1E1E22] p-0.5 rounded border border-[#3A3A3E]">
+              <button
+                type="button"
+                onClick={() => setDisplayMode('individual')}
+                className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
+                  displayMode === 'individual' ? 'bg-[#656565] text-white font-bold' : 'text-[#8F96A3] hover:text-white'
+                }`}
+              >
+                Packets
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayMode('aggregate')}
+                className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
+                  displayMode === 'aggregate' ? 'bg-[#656565] text-white font-bold' : 'text-[#8F96A3] hover:text-white'
+                }`}
+              >
+                Flow
+              </button>
+            </div>
+
+            {/* Randomize Seed button */}
             <button
               type="button"
               onClick={randomizeSeed}
-              title="Generate new random seed"
-              className="px-2 h-7 bg-[#3A3A3E] hover:bg-[#48484E] text-white rounded flex items-center justify-center text-[10px] font-mono cursor-pointer"
+              title={`Current Seed: ${seed}. Click to randomize`}
+              className="h-7 px-2 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#F3EEE3] transition-all cursor-pointer"
             >
               Rnd
             </button>
+
+            {/* Event Log button */}
+            <button
+              type="button"
+              onClick={toggleEventLog}
+              className={`h-7 px-2 rounded transition-all cursor-pointer ${
+                isEventLogOpen
+                  ? 'bg-[#F3EEE3] text-[#15181E] font-bold'
+                  : 'bg-[#3A3A3E] hover:bg-[#48484E] text-[#F3EEE3]'
+              }`}
+            >
+              Logs
+            </button>
           </div>
 
-          {/* Event Log Drawer Button */}
-          <button
-            type="button"
-            onClick={toggleEventLog}
-            title={isEventLogOpen ? 'Close Event Log' : 'Open Event Log'}
-            className={`h-7 px-2.5 rounded transition-all ${
-              isEventLogOpen
-                ? 'bg-[#D9541E] text-white font-bold'
-                : 'bg-[#3A3A3E] hover:bg-[#48484E] text-white'
-            }`}
-          >
-            Log
-          </button>
+          {/* Tablet & Narrow Screen "More ▾" Overflow Popover (A9) */}
+          <div className="relative lg:hidden" ref={moreRef}>
+            <button
+              type="button"
+              onClick={() => setIsMoreOpen(!isMoreOpen)}
+              className="h-7 px-2 rounded bg-[#3A3A3E] hover:bg-[#48484E] text-[#F3EEE3] transition-all flex items-center gap-1 cursor-pointer"
+              aria-label="More simulation controls"
+              aria-expanded={isMoreOpen}
+            >
+              <span>More</span>
+              <span className="text-[9px]">▾</span>
+            </button>
+
+            {isMoreOpen && (
+              <div className="absolute right-0 bottom-full mb-2 w-56 bg-[#1B1E24] border border-[#2A2E39] rounded shadow-2xl p-3 text-xs space-y-2.5 z-50 font-mono animate-in fade-in duration-150">
+                {/* Speed Controls */}
+                <div>
+                  <div className="text-[10px] text-[#8F96A3] mb-1">Sim Speed</div>
+                  <div className="flex items-center gap-1 bg-[#15181E] p-0.5 rounded border border-[#2A2E39]">
+                    {([1, 2, 4, 8] as SimulationSpeed[]).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => {
+                          setSpeed(s);
+                          setIsMoreOpen(false);
+                        }}
+                        className={`flex-1 py-1 rounded text-[10px] ${
+                          speed === s ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                        }`}
+                      >
+                        {s}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Display Mode */}
+                <div>
+                  <div className="text-[10px] text-[#8F96A3] mb-1">Display Mode</div>
+                  <div className="flex items-center gap-1 bg-[#15181E] p-0.5 rounded border border-[#2A2E39]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDisplayMode('individual');
+                        setIsMoreOpen(false);
+                      }}
+                      className={`flex-1 py-1 rounded text-[10px] ${
+                        displayMode === 'individual' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                      }`}
+                    >
+                      Packets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDisplayMode('aggregate');
+                        setIsMoreOpen(false);
+                      }}
+                      className={`flex-1 py-1 rounded text-[10px] ${
+                        displayMode === 'aggregate' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                      }`}
+                    >
+                      Flow
+                    </button>
+                  </div>
+                </div>
+
+                <div className="h-px bg-[#2A2E39]" />
+
+                {/* Randomize Seed & Logs */}
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      randomizeSeed();
+                      setIsMoreOpen(false);
+                    }}
+                    className="flex-1 py-1 px-2 rounded bg-[#2A2E39] hover:bg-[#343A46] text-[#F3EEE3] text-[10px] text-center"
+                  >
+                    Rnd Seed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleEventLog();
+                      setIsMoreOpen(false);
+                    }}
+                    className="flex-1 py-1 px-2 rounded bg-[#2A2E39] hover:bg-[#343A46] text-[#F3EEE3] text-[10px] text-center"
+                  >
+                    {isEventLogOpen ? 'Hide Logs' : 'Show Logs'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </footer>
 
-      {/* Traffic Configuration Modal */}
+      {/* Traffic Modal */}
       <TrafficModal />
     </>
   );

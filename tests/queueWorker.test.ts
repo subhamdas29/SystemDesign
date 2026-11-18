@@ -234,7 +234,7 @@ describe('Phase 9: Message Queue and Worker Async Processing Suite', () => {
     const aggSim = createAggregateSimulation({
       graph,
       traffic: {
-        peakRps: 200, // 200 write RPS > 100 drain RPS
+        peakRps: 400, // 400 * 0.49 = ~196 write RPS > 100 drain RPS
         durationMs: 10000,
         pattern: 'constant',
         patternParams: { type: 'constant' },

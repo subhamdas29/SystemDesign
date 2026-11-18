@@ -106,10 +106,9 @@ describe('Phase 9A: Lanes, Edge Kinds & Placement Rules', () => {
     graph = removeComponent(graph, workerNode.id);
     expect(canRemove(graph, mqNode.id).allowed).toBe(true);
 
-    // Once replica is removed, database removal rule applies standard checks
+    // Once replica is removed, database removal rule applies: removable as standalone store
     graph = removeComponent(graph, replicaNode.id);
-    // database still required as terminal data store
-    expect(canRemove(graph, dbNode.id).allowed).toBe(false);
+    expect(canRemove(graph, dbNode.id).allowed).toBe(true);
   });
 
   it('preserves regression hash on runs using starter architecture without new components', () => {

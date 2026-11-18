@@ -18,7 +18,11 @@ describe('Phase 8A: Shared Queue Competition (No Routing Hacks)', () => {
     };
     graph = {
       ...graph,
-      nodes: graph.nodes.map((n) => (n.id === serverNode.id ? { ...n, config: { ...n.config, ...constrainedConfig } } : n)),
+      nodes: graph.nodes.map((n) => {
+        if (n.id === serverNode.id) return { ...n, config: { ...n.config, ...constrainedConfig } };
+        if (n.type === 'cdn') return { ...n, config: { ...n.config, ddosProtection: 'none' } };
+        return n;
+      }),
     };
 
     // 1. Run baseline: 20 RPS legitimate traffic alone

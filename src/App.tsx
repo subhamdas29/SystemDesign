@@ -199,18 +199,8 @@ export const App: React.FC = () => {
         </>
       ) : activeNavTab === 'presets' ? (
         <PresetsPage />
-      ) : activeNavTab === 'problems' ? (
-        <ComingSoonPage
-          title="System Design Challenges & Problems"
-          subtitle="Curated architecture interview problems with realistic traffic patterns, automated grading, and constraint verification."
-          badge="Problems Mode"
-        />
       ) : (
-        <ComingSoonPage
-          title="Interactive Architecture Interview"
-          subtitle="Real-time multi-tier system design interview simulations with adaptive workload testing and architectural trade-off evaluations."
-          badge="Interview Mode"
-        />
+        <ComingSoonPage />
       )}
 
       {/* Modals & Overlays */}

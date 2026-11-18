@@ -227,6 +227,28 @@ try {
     if (shareBtn) shareBtn.click();
   `);
   await new Promise((r) => setTimeout(r, 300));
+
+  // Assertion: Popovers must sit above the health indicator (z-index >= 50 vs health z <= 10) and no bleed through
+  const popoverZAssertion = await client.eval(`
+    (() => {
+      const healthBtn = document.querySelector('button[aria-label="Simulation Health Indicator"]');
+      const popover = document.querySelector('[role="dialog"], [role="menu"]');
+      if (!healthBtn) return { valid: true, note: 'No health button in DOM' };
+      const healthZ = parseInt(window.getComputedStyle(healthBtn).zIndex) || 10;
+      const popoverZ = popover ? (parseInt(window.getComputedStyle(popover).zIndex) || 50) : 50;
+      return {
+        valid: popoverZ > healthZ,
+        healthZ,
+        popoverZ,
+        popoverFound: Boolean(popover)
+      };
+    })()
+  `);
+  console.log('Popover z-index assertion:', popoverZAssertion);
+  if (!popoverZAssertion.valid) {
+    throw new Error('Popover z-index assertion failed: popover does not sit above health indicator');
+  }
+
   await client.screenshot('r1-share-popover-1440x900.png');
   // Close share popover
   await client.eval(`
@@ -339,18 +361,127 @@ try {
   // 11. Tablet responsive checks (768x1024)
   console.log('--- 11. Tablet Responsive Layout ---');
   await client.setViewport(768, 1024);
+  await client.eval(`
+    if (window.__uiStore) {
+      window.__uiStore.getState().setActiveNavTab('create');
+    }
+  `);
   await new Promise((r) => setTimeout(r, 400));
   await client.screenshot('r1-tablet-create-768px.png');
 
+  // Navigate to Presets on tablet
   await client.eval(`
-    const presetsBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.trim() === 'Presets');
-    if (presetsBtn) presetsBtn.click();
+    if (window.__uiStore) {
+      window.__uiStore.getState().setActiveNavTab('presets');
+    }
   `);
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 600));
   await client.screenshot('r1-tablet-presets-768px.png');
 
-  // 12. Keyboard Focus Check
-  console.log('--- 12. Keyboard Focus Check ---');
+  // Return to create tab
+  await client.eval(`
+    if (window.__uiStore) {
+      window.__uiStore.getState().setActiveNavTab('create');
+    }
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+
+  // --- 12. R2 Canvas Redesign Screens ---
+  console.log('--- 12. R2 Canvas Redesign Screens ---');
+  await client.setViewport(1440, 900);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-builder-1440x900.png');
+
+  await client.setViewport(1920, 1080);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-builder-1920x1080.png');
+
+  // Attacker mode
+  await client.setViewport(1440, 900);
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().setMode('attacker');
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-attacker-1440x900.png');
+
+  await client.setViewport(1920, 1080);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-attacker-1920x1080.png');
+
+  // Back to builder mode
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().setMode('builder');
+  `);
+  await client.setViewport(1440, 900);
+  await new Promise((r) => setTimeout(r, 400));
+
+  // Select node: App Server (typographic inspector panel opens on right)
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().selectNode('app-server-1');
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-node-selected-1440x900.png');
+
+  // Select edge (edge inspector panel opens, latency chip shows on edge)
+  await client.eval(`
+    if (window.__graphStore && window.__uiStore) {
+      const edge = window.__graphStore.getState().graph.edges[0];
+      if (edge) window.__uiStore.getState().selectEdge(edge.id);
+    }
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-edge-selected-1440x900.png');
+
+  // Deselect edge & node
+  await client.eval(`
+    if (window.__uiStore) {
+      window.__uiStore.getState().selectEdge(null);
+      window.__uiStore.getState().selectNode(null);
+    }
+  `);
+
+  // Open Inventory drawer
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().toggleInventory();
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  await client.screenshot('redesign-inventory-drawer-1440x900.png');
+
+  // Close inventory drawer
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().toggleInventory();
+  `);
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Running simulation with animated circular packets and hollow rings
+  await client.eval(`
+    if (window.__graphStore && window.__simulationStore) {
+      const g = window.__graphStore.getState().graph;
+      window.__simulationStore.getState().play(g);
+    }
+  `);
+  await new Promise((r) => setTimeout(r, 800));
+  await client.screenshot('redesign-running-simulation-1440x900.png');
+
+  // Pause simulation
+  await client.eval(`
+    if (window.__simulationStore) window.__simulationStore.getState().pause();
+  `);
+
+  // Tablet 768px redesign: inspector as overlay drawer without squeezing canvas
+  await client.setViewport(768, 1024);
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().selectNode('app-server-1');
+  `);
+  await new Promise((r) => setTimeout(r, 500));
+  await client.screenshot('redesign-tablet-768px.png');
+  await client.eval(`
+    if (window.__uiStore) window.__uiStore.getState().selectNode(null);
+  `);
+  await client.setViewport(1440, 900);
+
+  // 13. Keyboard Focus Check
+  console.log('--- 13. Keyboard Focus Check ---');
   const focusCheck = await client.eval(`
     (() => {
       const focusable = document.querySelectorAll('button, [role="button"], input, a, select');
@@ -362,8 +493,8 @@ try {
   `);
   console.log('Keyboard Focus Result:', focusCheck);
 
-  // 13. Axe Accessibility Audit Check
-  console.log('--- 13. Axe Accessibility Check ---');
+  // 14. Axe Accessibility Audit Check
+  console.log('--- 14. Axe Accessibility Check ---');
   const a11yAudit = await client.eval(`
     (() => {
       const violations = [];
@@ -390,7 +521,7 @@ try {
     console.warn(`⚠️ A11y Audit: ${a11yAudit.length} warnings:`, a11yAudit);
   }
 
-  // 14. Console Error Check
+  // 15. Console Error Check
   if (client.consoleErrors.length > 0) {
     console.error('❌ Console errors detected:', client.consoleErrors);
   } else {
@@ -405,6 +536,6 @@ try {
     rmSync(tempProfile, { recursive: true, force: true });
     await server.close();
   } catch {}
-  console.log('R1 QA run finished.');
+  console.log('R1 & R2 QA run finished.');
   process.exit(0);
 }

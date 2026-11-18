@@ -9,14 +9,16 @@ describe('GraphConfig Schema and Starter Graph', () => {
     expect(result.success).toBe(true);
   });
 
-  it('starter graph has client -> app-server -> database in order', () => {
+  it('starter graph has client -> cdn -> app-server -> database in order', () => {
     const starter = createStarterGraph();
-    expect(starter.nodes.map((n) => n.type)).toEqual(['client', 'app-server', 'database']);
-    expect(starter.edges).toHaveLength(2);
+    expect(starter.nodes.map((n) => n.type)).toEqual(['client', 'cdn', 'app-server', 'database']);
+    expect(starter.edges).toHaveLength(3);
     expect(starter.edges[0]!.source).toBe('client-1');
-    expect(starter.edges[0]!.target).toBe('app-server-1');
-    expect(starter.edges[1]!.source).toBe('app-server-1');
-    expect(starter.edges[1]!.target).toBe('database-1');
+    expect(starter.edges[0]!.target).toBe('cdn-1');
+    expect(starter.edges[1]!.source).toBe('cdn-1');
+    expect(starter.edges[1]!.target).toBe('app-server-1');
+    expect(starter.edges[2]!.source).toBe('app-server-1');
+    expect(starter.edges[2]!.target).toBe('database-1');
   });
 
   it('rejects graph with missing required properties', () => {

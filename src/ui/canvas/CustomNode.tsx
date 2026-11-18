@@ -7,7 +7,6 @@ import { useUiStore, selectSelectedNodeId, selectDraggingSwapNodeId } from '@sto
 import { useGraphStore, selectGraph } from '@store';
 import {
   useSimulationStore,
-  selectHighlightedPath,
   selectRuntimeBottleneck,
   selectStaticCapacity,
   selectActiveFailures,
@@ -31,24 +30,28 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
 
   // Simulation runtime state, path highlighting, and bottleneck detection
   const runtimeState = useSimulationStore((s) => s.runtimeNodes[id]);
-  const highlightedPath = useSimulationStore(selectHighlightedPath);
   const runtimeBottleneck = useSimulationStore(selectRuntimeBottleneck);
   const staticCapacity = useSimulationStore(selectStaticCapacity);
   const activeFailures = useSimulationStore(selectActiveFailures);
 
   const nodeFailure = activeFailures.find((f) => f.targetId === id);
-  const isPathHighlighted = highlightedPath.includes(id);
   const isRuntimeBottleneck = runtimeBottleneck?.nodeId === id;
   const isStaticBottleneck = staticCapacity?.bottleneckNodeId === id;
   const isBottleneck = isRuntimeBottleneck || (isStaticBottleneck && (runtimeState?.utilization ?? 0) > 0.85);
 
   const queueDepth = runtimeState?.queueDepth ?? 0;
   const utilization = runtimeState?.utilization ?? 0;
-  const healthStatus = runtimeState?.status ?? 'healthy';
+  const rawStatus = runtimeState?.status ?? 'healthy';
   const isThreatSource = (nodeData.type as string) === 'threat-source' || id === 'threat-source';
-  const isCompromised = runtimeState?.isCompromised ?? false;
   const isQuarantined = runtimeState?.isQuarantined ?? false;
   const circuitBreakerState = runtimeState?.circuitBreakerState ?? 'closed';
+
+  // Severity classification per Hybrid approval (plain words, NO orange for severity):
+  // Warning "▲ Busy", Overloaded "▲ Overloaded", Failed "✕ Offline", Quarantined "◇ Isolated", Degraded "▼ Slow"
+  const isFailed = rawStatus === 'failed' || Boolean(nodeFailure);
+  const isOverloaded = rawStatus === 'overloaded' || utilization >= 0.9 || isBottleneck;
+  const isWarning = !isOverloaded && !isFailed && (utilization >= 0.75 || queueDepth > 5);
+  const isDegraded = !isOverloaded && !isFailed && !isWarning && ((rawStatus as string) === 'degraded' || (runtimeState?.errorRate ?? 0) > 0.05);
 
   // Swap drag states
   const isBeingDragged = draggingSwapNodeId === id;
@@ -63,7 +66,9 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
     selectNode(id);
   };
 
-  const displayName = nodeData.label || nodeData.type.replace(/-/g, ' ');
+  const displayName = isQuarantined
+    ? `[${nodeData.label || nodeData.type.replace(/-/g, ' ')}]`
+    : nodeData.label || nodeData.type.replace(/-/g, ' ');
 
   return (
     <div
@@ -72,7 +77,7 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
       onMouseLeave={() => setIsHovered(false)}
       tabIndex={0}
       role="button"
-      title={`${displayName} | Util: ${Math.round(utilization * 100)}% | Queue: ${queueDepth} | Status: ${healthStatus}`}
+      title={`${displayName} | Util: ${Math.round(utilization * 100)}% | Status: ${rawStatus}`}
       aria-label={`${displayName} node`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -80,72 +85,38 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         }
       }}
       className={`
-        relative flex flex-col items-center justify-center p-2 cursor-pointer select-none outline-none
-        transition-all duration-150 min-w-[120px] max-w-[170px]
-        ${isBeingDragged ? 'opacity-60 scale-95' : ''}
+        relative flex flex-col items-center justify-center p-2 cursor-pointer select-none
+        transition-opacity duration-150 min-w-[110px] max-w-[160px] font-mono outline-none
+        ${isBeingDragged ? 'opacity-60' : ''}
         ${isDimmed ? 'opacity-25' : 'opacity-100'}
-        ${
-          isSelected
-            ? 'ring-1 ring-[#D9541E] ring-offset-4 ring-offset-[#0B0B0D] rounded-lg'
-            : isPathHighlighted
-            ? 'ring-1 ring-white/80 ring-offset-3 ring-offset-[#0B0B0D] rounded-lg'
-            : isBottleneck
-            ? 'ring-1 ring-white ring-offset-4 ring-offset-[#0B0B0D] rounded-lg animate-pulse'
-            : isHovered
-            ? 'ring-1 ring-white/40 ring-offset-2 ring-offset-[#0B0B0D] rounded-lg'
-            : ''
-        }
+        focus-visible:ring-2 focus-visible:ring-dotted focus-visible:ring-[#F3EEE3] focus-visible:ring-offset-4 focus-visible:ring-offset-[#0B0B0D] focus-visible:rounded-sm
       `}
     >
-      {/* State callouts (Never color alone: text badges paired with icons) */}
-      {isQuarantined && (
-        <span className="mb-1 px-1.5 py-0.2 bg-[#2C2C2C] text-[#D9541E] border border-[#D9541E] rounded text-[9px] font-mono font-bold tracking-wider animate-pulse">
-          QUARANTINED
-        </span>
-      )}
-      {isCompromised && !isQuarantined && (
-        <span className="mb-1 px-1.5 py-0.2 bg-[#2C2C2C] text-[#EF4444] border border-[#EF4444] rounded text-[9px] font-mono font-bold tracking-wider animate-pulse">
-          COMPROMISED
-        </span>
-      )}
-      {circuitBreakerState === 'open' && (
-        <span className="mb-1 px-1.5 py-0.2 bg-[#2C2C2C] text-[#F59E0B] border border-[#F59E0B] rounded text-[9px] font-mono font-bold tracking-wider">
-          CB: OPEN
-        </span>
-      )}
-      {nodeFailure && !isCompromised && !isQuarantined && (
-        <span className="mb-1 px-1.5 py-0.2 bg-[#2C2C2C] text-[#EF4444] border border-[#EF4444] rounded text-[9px] font-mono font-bold tracking-wider">
-          FAIL
-        </span>
-      )}
-      {isBottleneck && !isCompromised && !isQuarantined && !isQuarantined && (
-        <span className="mb-1 px-1.5 py-0.2 bg-white text-black rounded text-[9px] font-mono font-bold tracking-wider">
-          BOTTLENECK
-        </span>
-      )}
-
       {/* Target Handle (Left) - Minimalist point */}
       {rule?.slot !== 1 && !isThreatSource && (
         <Handle
           type="target"
           position={Position.Left}
-          style={{ top: 24, left: 0 }}
+          style={{ top: 20, left: 0 }}
           className="!w-2 !h-2 !bg-[#FFFFFF] !border-none !opacity-0 hover:!opacity-100"
         />
       )}
 
       {/* Node Icon - White line icon on dark canvas, Burnt Orange for threat */}
-      <div className="relative mb-2 flex items-center justify-center">
+      <div
+        className={`relative mb-2 flex items-center justify-center transition-opacity ${
+          isFailed
+            ? 'opacity-50 border-dashed'
+            : isOverloaded
+            ? 'motion-safe:animate-pulse motion-reduce:animate-none'
+            : ''
+        }`}
+      >
         <ComponentIcon
           type={nodeData.type}
-          size={48}
+          size={36}
           color={isThreatSource ? '#D9541E' : '#FFFFFF'}
         />
-        {healthStatus === 'failed' && (
-          <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-            ✕
-          </span>
-        )}
       </div>
 
       {/* Source Handle (Right) - Minimalist point */}
@@ -153,23 +124,65 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
         <Handle
           type="source"
           position={Position.Right}
-          style={{ top: 24, right: 0 }}
+          style={{ top: 20, right: 0 }}
           className="!w-2 !h-2 !bg-[#FFFFFF] !border-none !opacity-0 hover:!opacity-100"
         />
       )}
 
-      {/* Full Name: Roboto Mono, Regular, 12px, wrap up to 2 lines without truncation */}
+      {/* Full Name & Selection / Hover styling:
+          - Selected: orange 2px underline under label, no box, no bars
+          - Hover: dashed underline under label (no scale)
+      */}
       <div className="text-center w-full px-1">
-        <div className="text-[12px] font-mono font-normal text-white leading-tight break-words whitespace-normal line-clamp-2">
+        <div
+          className={`
+            text-[12px] font-mono leading-tight break-words whitespace-normal line-clamp-2 inline-block transition-all
+            ${isThreatSource ? 'text-[#D9541E]' : 'text-[#F3EEE3]'}
+            ${isFailed ? 'line-through text-[#8F96A3]' : ''}
+            ${
+              isSelected
+                ? 'border-b-2 border-[#D9541E] pb-0.5'
+                : isHovered
+                ? 'border-b border-dashed border-white/60 pb-0.5'
+                : ''
+            }
+          `}
+        >
           {displayName}
         </div>
 
-        {/* Utilization % & Queue: Roboto Mono, Regular, 10px, secondary grey */}
-        <div className="mt-1 text-[10px] font-mono text-[#A1A1AA] flex items-center justify-center gap-1">
+        {/* Utilization %: Roboto Mono, 10px, secondary grey #8F96A3 (NO blue) */}
+        <div className="mt-1 text-[10px] font-mono text-[#8F96A3] flex items-center justify-center gap-1">
           <span>{Math.round(utilization * 100)}%</span>
-          {queueDepth > 0 && <span className="text-white font-medium">• Q:{queueDepth}</span>}
-          {healthStatus === 'overloaded' && <span className="text-[#D9541E] font-medium">• HIGH</span>}
+          {queueDepth > 0 && <span>· Q:{queueDepth}</span>}
         </div>
+
+        {/* Severity: plain words + cream/white glyphs under utilization %. NO orange for severity! */}
+        {isFailed && (
+          <div className="text-[10px] font-mono text-[#F3EEE3] font-medium mt-0.5 flex items-center justify-center gap-1">
+            <span>✕ Offline</span>
+          </div>
+        )}
+        {!isFailed && (isQuarantined || circuitBreakerState === 'open') && (
+          <div className="text-[10px] font-mono text-[#F3EEE3] font-medium mt-0.5 flex items-center justify-center gap-1">
+            <span>◇ Isolated</span>
+          </div>
+        )}
+        {!isFailed && !isQuarantined && isOverloaded && (
+          <div className="text-[10px] font-mono text-[#F3EEE3] font-medium mt-0.5 flex items-center justify-center gap-1">
+            <span>▲ Overloaded</span>
+          </div>
+        )}
+        {!isFailed && !isQuarantined && !isOverloaded && isWarning && (
+          <div className="text-[10px] font-mono text-[#F3EEE3] font-medium mt-0.5 flex items-center justify-center gap-1">
+            <span>▲ Busy</span>
+          </div>
+        )}
+        {!isFailed && !isQuarantined && !isOverloaded && !isWarning && isDegraded && (
+          <div className="text-[10px] font-mono text-[#F3EEE3] font-medium mt-0.5 flex items-center justify-center gap-1">
+            <span>▼ Slow {Math.round(runtimeState?.p99LatencyMs ?? 450)}ms</span>
+          </div>
+        )}
       </div>
     </div>
   );

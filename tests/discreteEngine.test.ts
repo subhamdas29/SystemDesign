@@ -31,8 +31,8 @@ describe('Discrete Simulation Engine Core', () => {
     // 10 RPS for 1 second = ~10 requests
     const traffic = { rps: 10, durationMs: 1000 };
 
-    const sim = createSimulation({ graph: starter, traffic, seed: 42 });
-    sim.advanceTo(2000); // Allow in-flight requests to complete
+    const sim = createSimulation({ graph: starter, traffic, seed: 123 });
+    sim.advanceTo(3000); // Allow in-flight requests to complete
     const snap = sim.getSnapshot();
 
     expect(snap.counters.created).toBeGreaterThan(0);

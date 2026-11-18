@@ -8,7 +8,7 @@ describe('Aggregate Fluid Simulation Engine', () => {
     const sim = createAggregateSimulation({
       graph: starter,
       traffic: {
-        peakRps: 1000, // exceeds DB capacity (500), forcing queuing and rejections
+        peakRps: 1500, // exceeds DB capacity (500) even after CDN edge offload, forcing queuing and rejections
         durationMs: 5000, // 5 seconds
         pattern: 'constant',
         patternParams: { type: 'constant' },

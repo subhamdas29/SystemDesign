@@ -1,7 +1,6 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import {
   ReactFlow,
-  Controls,
   MiniMap,
   MarkerType,
   useReactFlow,
@@ -15,7 +14,7 @@ import { CustomEdge } from './CustomEdge';
 import { HealthIndicator } from './HealthIndicator';
 import { AnimationCanvas } from '../animation/AnimationCanvas';
 import { useGraphStore, selectGraph, selectNodes, selectEdges } from '@store';
-import { useUiStore, selectDraggingSwapNodeId } from '@store';
+import { useUiStore, selectDraggingSwapNodeId, selectIsFocusMode } from '@store';
 import {
   useSimulationStore,
   selectHighlightedPath,
@@ -41,10 +40,11 @@ const CanvasInner: React.FC = () => {
   const selectEdge = useUiStore((s) => s.selectEdge);
   const setDraggingSwapNodeId = useUiStore((s) => s.setDraggingSwapNodeId);
   const draggingSwapNodeId = useUiStore(selectDraggingSwapNodeId);
+  const isFocusMode = useUiStore(selectIsFocusMode);
   const highlightedPath = useSimulationStore(selectHighlightedPath);
   const isAttackerMode = useAttackStore((s) => s.isAttackerMode);
 
-  const { fitView } = useReactFlow();
+  const { fitView, zoomIn, zoomOut } = useReactFlow();
   const initialFitDone = useRef(false);
 
   // Compute deterministic layout positions (spread in 2D)
@@ -74,7 +74,7 @@ const CanvasInner: React.FC = () => {
       regularNodes.push({
         id: 'threat-source',
         type: 'custom',
-        position: { x: clientPos.x - 240, y: clientPos.y },
+        position: { x: clientPos.x - 220, y: clientPos.y },
         data: {
           id: 'threat-source',
           type: 'threat-source',
@@ -107,8 +107,8 @@ const CanvasInner: React.FC = () => {
       markerEnd: {
         type: MarkerType.Arrow,
         color: '#FFFFFF',
-        width: 14,
-        height: 14,
+        width: 12,
+        height: 12,
       },
     }));
 
@@ -138,8 +138,8 @@ const CanvasInner: React.FC = () => {
           markerEnd: {
             type: MarkerType.Arrow,
             color: '#D9541E',
-            width: 14,
-            height: 14,
+            width: 12,
+            height: 12,
           },
         });
       }
@@ -221,10 +221,17 @@ const CanvasInner: React.FC = () => {
     setDraggingSwapNodeId(null);
   };
 
+  // Check if graph exceeds viewport to decide whether minimap should show (A6)
+  const shouldShowMiniMap = useMemo(() => {
+    if (isFocusMode) return false;
+    // Hide unless architecture has expanded beyond standard single-screen density
+    return rawNodes.length >= 8;
+  }, [isFocusMode, rawNodes.length]);
+
   return (
     <div className="w-full h-full relative" style={{ backgroundColor: '#0B0B0D' }}>
-      {/* Free-floating Health Indicator (Section 5) */}
-      <HealthIndicator />
+      {/* Free-floating Health Indicator (Section 5 / A5) - Hidden in Eye mode */}
+      {!isFocusMode && <HealthIndicator />}
 
       <ReactFlow
         nodes={flowNodes}
@@ -259,38 +266,56 @@ const CanvasInner: React.FC = () => {
       >
         <AnimationCanvas />
 
-        <Controls
-          showInteractive={false}
-          className="!bg-[#111113] !border !border-[#27272A] !rounded-lg overflow-hidden !shadow-md [&>button]:!bg-[#111113] [&>button]:!border-b [&>button]:!border-[#27272A] [&>button]:!fill-[#FFFFFF] hover:[&>button]:!bg-[#18181B]"
-        />
-
-        <MiniMap
-          nodeColor="#3F3F46"
-          maskColor="rgba(11, 11, 13, 0.85)"
-          className="!bg-[#111113] !border !border-[#27272A] !rounded-lg overflow-hidden !m-3"
-          style={{ width: 140, height: 85 }}
-        />
+        {/* MiniMap: Only rendered if graph exceeds viewport (A6) */}
+        {shouldShowMiniMap && (
+          <MiniMap
+            nodeColor="#3F3F46"
+            maskColor="rgba(11, 11, 13, 0.85)"
+            className="!bg-[#15181E] !border !border-[#2A2E39] !rounded !overflow-hidden !m-3"
+            style={{ width: 140, height: 85 }}
+          />
+        )}
       </ReactFlow>
 
-      {/* Focus Path & Fit All Zoom Controls */}
-      <div className="absolute bottom-6 left-6 z-10 flex flex-col gap-1.5 font-mono">
-        <button
-          type="button"
-          onClick={handleFocusPath}
-          title="Zoom to active request path or core pipeline"
-          className="px-2.5 py-1.5 bg-[#111113]/90 hover:bg-[#18181B] text-white border border-[#27272A] hover:border-white rounded-md text-[11px] shadow-sm flex items-center gap-1.5 transition-all"
-        >
-          <span>Focus Path</span>
-        </button>
-        <button
-          type="button"
-          onClick={handleFitAll}
-          title="Fit all architecture components on screen"
-          className="px-2.5 py-1.5 bg-[#111113]/90 hover:bg-[#18181B] text-[#A1A1AA] hover:text-white border border-[#27272A] hover:border-white rounded-md text-[11px] shadow-sm flex items-center gap-1.5 transition-all"
-        >
-          <span>Fit All</span>
-        </button>
-      </div>
+      {/* Unified Canvas Controls Cluster: Focus Path, Fit All, Zoom +, Zoom - (A6) */}
+      {!isFocusMode && (
+        <div className="absolute bottom-6 left-6 z-10 flex items-center bg-[#15181E] border border-[#2A2E39] rounded shadow-md overflow-hidden font-mono text-[11px]">
+          <button
+            type="button"
+            onClick={handleFocusPath}
+            title="Focus active request path or core pipeline"
+            className="px-2.5 py-1.5 text-[#F3EEE3] hover:bg-[#252932] border-r border-[#2A2E39] transition-colors cursor-pointer"
+          >
+            Focus Path
+          </button>
+          <button
+            type="button"
+            onClick={handleFitAll}
+            title="Fit all architecture components on screen"
+            className="px-2.5 py-1.5 text-[#F3EEE3] hover:bg-[#252932] border-r border-[#2A2E39] transition-colors cursor-pointer"
+          >
+            Fit All
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomIn({ duration: 200 })}
+            title="Zoom In"
+            aria-label="Zoom In"
+            className="w-7 h-7 flex items-center justify-center text-[#F3EEE3] hover:bg-[#252932] border-r border-[#2A2E39] transition-colors cursor-pointer text-sm"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomOut({ duration: 200 })}
+            title="Zoom Out"
+            aria-label="Zoom Out"
+            className="w-7 h-7 flex items-center justify-center text-[#F3EEE3] hover:bg-[#252932] transition-colors cursor-pointer text-sm"
+          >
+            −
+          </button>
+        </div>
+      )}
     </div>
   );
 };

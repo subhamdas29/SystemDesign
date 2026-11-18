@@ -274,6 +274,27 @@ export const AnimationCanvas: React.FC = () => {
           ctx.arc(currentPos.x, currentPos.y, 3, 0, Math.PI * 2);
           ctx.fillStyle = '#71717A';
           ctx.fill();
+        } else if (pkt.state === 'response') {
+          // Response packet: hollow ring (white ring, no fill)
+          ctx.beginPath();
+          ctx.arc(currentPos.x, currentPos.y, 4, 0, Math.PI * 2);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.stroke();
+
+          if (isTracked) {
+            ctx.beginPath();
+            ctx.arc(currentPos.x, currentPos.y, 6, 0, Math.PI * 2);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#D9541E';
+            ctx.stroke();
+          }
+        } else if (pkt.state === 'queued') {
+          // Queued packet: waiting near the node
+          ctx.beginPath();
+          ctx.arc(currentPos.x, currentPos.y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#8F96A3';
+          ctx.fill();
         } else if (isMalicious) {
           // Orange fill with thin outer ring for malicious traffic
           ctx.beginPath();

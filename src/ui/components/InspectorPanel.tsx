@@ -1,19 +1,28 @@
-import React, { useState } from 'react';
+/**
+ * Typographic Inspector Panel (R2 Section 4).
+ * Slides in from the right (~220ms ease-out). Closes with Esc, close control, or clicking canvas.
+ * Typography only, using tokens. ZERO nested cards, ZERO blue tints.
+ * Structured sections for selected Node or Edge.
+ */
+
+import React, { useEffect } from 'react';
 import { useGraphStore, selectGraph, selectNodes } from '@store';
 import { useUiStore, selectSelectedNodeId, selectSelectedEdgeId } from '@store';
-import { useSimulationStore, selectStaticCapacity, selectRuntimeBottleneck } from '@store';
+import {
+  useSimulationStore,
+  selectSimPlayStatus,
+  selectStaticCapacity,
+  selectSimTimeMs,
+} from '@store';
 import { COMPONENT_RULES, canRemove, canSwap, ComponentSlotRule } from '@builder';
 import { ComponentIcon } from './ComponentIcon';
 import { ConfigForm } from './ConfigForm';
-import { LiveInspectorTab } from './LiveInspectorTab';
 import { ComponentType } from '@types';
 import { EDGE_PRESETS, EdgePresetName } from '../../types/graph';
 import { analyzeCapacity } from '../../engine/analysis/capacityAnalysis';
-import { formatRps, formatPercent } from '../../design/formatters';
+import { formatRps, formatLatency } from '../../design/formatters';
 
 export const InspectorPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'config' | 'live'>('live');
-  const [showComponentExplanation, setShowComponentExplanation] = useState(false);
   const graph = useGraphStore(selectGraph);
   const nodes = useGraphStore(selectNodes);
   const removeNode = useGraphStore((s) => s.removeNode);
@@ -28,8 +37,10 @@ export const InspectorPanel: React.FC = () => {
   const updateEdgeLatency = useGraphStore((s) => s.updateEdgeLatency);
   const applyEdgePreset = useGraphStore((s) => s.applyEdgePreset);
 
+  const status = useSimulationStore(selectSimPlayStatus);
+  const simTimeMs = useSimulationStore(selectSimTimeMs);
+  const runtimeState = useSimulationStore((s) => (selectedNodeId ? s.runtimeNodes[selectedNodeId] : null));
   const storeCapacity = useSimulationStore(selectStaticCapacity);
-  const runtimeBottleneck = useSimulationStore(selectRuntimeBottleneck);
   const capacity = storeCapacity ?? analyzeCapacity(graph);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
@@ -40,10 +51,17 @@ export const InspectorPanel: React.FC = () => {
 
   const removeCheck = selectedNode ? canRemove(graph, selectedNode.id) : null;
 
-  const isSelectedNodeBottleneck =
-    selectedNode &&
-    (selectedNode.id === capacity.bottleneckNodeId ||
-      selectedNode.id === runtimeBottleneck?.nodeId);
+  // Esc key closes inspector
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        selectNode(null);
+        selectEdge(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectNode, selectEdge]);
 
   // Find candidate components for swapping
   const swapCandidates: ComponentType[] = selectedNode && rule?.swapGroup
@@ -55,7 +73,6 @@ export const InspectorPanel: React.FC = () => {
       )
     : [];
 
-  const isSwappable = Boolean(rule?.swapGroup);
   const handleRemove = () => {
     if (!selectedNode || !removeCheck?.allowed) return;
     removeNode(selectedNode.id);
@@ -67,26 +84,35 @@ export const InspectorPanel: React.FC = () => {
     swapNode(selectedNode.id, targetType);
   };
 
+  const handleClose = () => {
+    selectNode(null);
+    selectEdge(null);
+  };
+
+  const isRunningOrFinished = status === 'running' || status === 'paused' || simTimeMs > 0;
+
   return (
     <aside
-      className="w-full h-full flex flex-col bg-[#131316] border-l border-[#27272a] select-none z-10"
+      className="w-full h-full flex flex-col bg-[#15181E] border-l border-[#2A2E39] select-none font-mono text-[#F3EEE3] transition-transform duration-[220ms] ease-out shadow-2xl"
       aria-label="Component Inspector"
     >
-      {/* Panel Header */}
-      <div className="p-4 border-b border-[#27272a] flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-white tracking-wide uppercase">Inspector</h2>
-          <p className="text-xs text-[var(--color-text-muted)]">Configuration & Capacity</p>
+      {/* Panel Top Bar */}
+      <div className="h-14 px-5 border-b border-[#2A2E39] flex items-center justify-between shrink-0 bg-[#1B1E24]">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-[#F3EEE3] tracking-wider uppercase">
+            Inspector
+          </span>
+          <span className="text-[10px] text-[#8F96A3]">
+            {selectedNode ? 'Node' : selectedEdge ? 'Edge' : 'Canvas'}
+          </span>
         </div>
+
         <div className="flex items-center gap-2">
           {(selectedNode || selectedEdge) && (
             <button
               type="button"
-              onClick={() => {
-                selectNode(null);
-                selectEdge(null);
-              }}
-              className="text-xs text-[var(--color-text-faint)] hover:text-white px-2 py-1 rounded hover:bg-[#1f1f23] transition-colors"
+              onClick={handleClose}
+              className="text-[11px] text-[#8F96A3] hover:text-[#F3EEE3] transition-colors cursor-pointer"
             >
               Clear
             </button>
@@ -94,390 +120,292 @@ export const InspectorPanel: React.FC = () => {
           <button
             type="button"
             onClick={toggleInspector}
-            title="Collapse Inspector"
-            aria-label="Collapse Inspector"
-            className="w-7 h-7 rounded-lg bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white text-xs flex items-center justify-center transition-all shadow-sm"
+            title="Close Inspector (Esc)"
+            aria-label="Close Inspector"
+            className="w-6 h-6 rounded text-[#8F96A3] hover:text-[#F3EEE3] hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
           >
-            ▶
+            ✕
           </button>
         </div>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Main Content Area - Typography Only, No Nested Cards */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-6">
         {selectedNode ? (
-          <div className="p-4 space-y-4">
-            {/* Bottleneck Alert Banner if this node is the bottleneck */}
-            {isSelectedNodeBottleneck && (
-              <div className="p-3 bg-white/10 border border-white rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.2)] space-y-1">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-white tracking-wider">
-                  <span className="animate-pulse">⚠️</span>
-                  <span>SYSTEM BOTTLENECK</span>
+          <div>
+            {/* Header: Large Icon + Display Name */}
+            <div className="flex items-center gap-3 pb-4 border-b border-[#2A2E39]">
+              <ComponentIcon type={selectedNode.type} size={36} color="#FFFFFF" />
+              <div>
+                <h3 className="text-sm font-bold text-[#F3EEE3]">
+                  {selectedNode.label || selectedNode.type}
+                </h3>
+                <div className="text-[10px] text-[#8F96A3] mt-0.5">
+                  Slot {rule?.slot ?? '—'} · ID: {selectedNode.id}
                 </div>
-                <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
-                  {capacity.explanation}
-                </p>
-                {capacity.suggestedFixes.length > 0 && (
-                  <div className="text-[10px] text-white pt-1 font-mono">
-                    Suggested fixes: {capacity.suggestedFixes.map(f => COMPONENT_RULES[f].label).join(', ')}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Header / Identification */}
-            <div className="flex items-start gap-3 pb-3 border-b border-[#27272a]">
-              <div className="p-2.5 rounded-xl bg-[#1c1c20] border border-[#27272a] shadow-inner">
-                <ComponentIcon type={selectedNode.type} size={32} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-white truncate">
-                    {selectedNode.label || selectedNode.type}
-                  </h3>
-                  <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-white/10 text-[var(--color-text-secondary)] border border-white/20">
-                    Slot {rule?.slot}
-                  </span>
-                </div>
-                <div className="text-xs font-mono text-[var(--color-text-muted)] truncate mt-0.5">
-                  ID: {selectedNode.id}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowComponentExplanation(!showComponentExplanation)}
-                  className="mt-1.5 text-[11px] text-neutral-300 hover:text-white flex items-center gap-1 font-medium underline decoration-dotted"
-                >
-                  <span>💡 Explain this component</span>
-                </button>
-                {showComponentExplanation && (
-                  <div className="mt-2 p-2.5 rounded-lg bg-[#111113] border border-[#3f3f46] text-xs text-neutral-300 space-y-1 animate-in fade-in">
-                    <p className="font-semibold text-white">{rule?.label || selectedNode.type}</p>
-                    <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                      {rule?.whyHere || 'Core building block in modern distributed system architecture.'}
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Tab Selector: Live vs Config */}
-            <div className="flex border-b border-[#27272a] -mx-4 px-4">
-              <button
-                type="button"
-                onClick={() => setActiveTab('live')}
-                className={`flex-1 py-1.5 text-xs font-mono font-semibold transition-all border-b-2 flex items-center justify-center gap-1.5 ${
-                  activeTab === 'live'
-                    ? 'border-white text-white'
-                    : 'border-transparent text-[var(--color-text-muted)] hover:text-white'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>Live Telemetry</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('config')}
-                className={`flex-1 py-1.5 text-xs font-mono font-semibold transition-all border-b-2 ${
-                  activeTab === 'config'
-                    ? 'border-white text-white'
-                    : 'border-transparent text-[var(--color-text-muted)] hover:text-white'
-                }`}
-              >
-                Config & Rules
-              </button>
-            </div>
-
-            {activeTab === 'live' ? (
-              <LiveInspectorTab node={selectedNode} />
-            ) : (
-              <>
-                {/* Why here? educational line */}
-                <div className="p-3 bg-[#18181b] rounded-lg border border-[#27272a]">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block mb-1">
-                    Architectural Purpose
-                  </span>
-                  <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
-                    {rule?.whyHere}
-                  </p>
-                </div>
-
-                {/* Swap Actions */}
-                {isSwappable && (
-                  <div className="p-3 bg-[#18181b] rounded-lg border border-[#27272a] space-y-2">
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block">
-                      Alternate Components (Swap)
-                    </span>
-                    {swapCandidates.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {swapCandidates.map((candidate) => (
-                          <button
-                            key={candidate}
-                            type="button"
-                            onClick={() => handleSwap(candidate)}
-                            className="w-full py-1.5 px-3 rounded text-xs font-mono bg-[#18181b] hover:bg-[#222226] text-white border border-[#3f3f46] hover:border-white transition-all flex items-center justify-between"
-                          >
-                            <span>Swap with {COMPONENT_RULES[candidate].label}</span>
-                            <span>⇄</span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-[var(--color-text-faint)]">
-                        No alternate components in this swap group.
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Real Interactive Configuration Form */}
-                <ConfigForm node={selectedNode} />
-
-                {/* Remove Action */}
-                <div className="pt-2 border-t border-[#27272a]">
-                  <button
-                    type="button"
-                    disabled={!removeCheck?.allowed}
-                    onClick={handleRemove}
-                    title={removeCheck?.reason}
-                    aria-label={`Remove ${selectedNode.label || selectedNode.type}`}
-                    className={`
-                      w-full py-2 px-3 rounded-lg text-xs font-medium transition-all duration-150 flex items-center justify-center gap-2
-                      ${
-                        removeCheck?.allowed
-                          ? 'bg-[#18181b] hover:bg-[#27272a] text-white border border-[#71717a] hover:border-white hover:shadow-[0_0_12px_rgba(255,255,255,0.2)]'
-                          : 'bg-[#141416] text-[#71717a] border border-[#27272a] cursor-not-allowed'
-                      }
-                    `}
-                  >
-                    <span>✕</span>
-                    <span>Remove Component</span>
-                  </button>
-
-                  {!removeCheck?.allowed && (
-                    <p className="text-[11px] text-[var(--color-text-faint)] mt-2 px-1">
-                      {removeCheck?.reason}
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        ) : selectedEdge ? (
-          <div className="p-4 space-y-4 font-mono text-xs">
-            {/* Edge Header */}
-            <div className="p-3 bg-[#18181b] rounded-xl border border-[#27272a] space-y-2">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)]">
-                Network Connection
+            {/* Section 1: What it is */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-1">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                1. What it is
               </div>
-              <div className="flex items-center justify-between text-white font-bold">
-                <span className="truncate max-w-[100px]">{selectedEdge.source}</span>
-                <span className="text-[var(--color-text-muted)]">➔</span>
-                <span className="truncate max-w-[100px]">{selectedEdge.target}</span>
-              </div>
-              <div className="text-[10px] text-[var(--color-text-muted)]">
-                Edge ID: <span className="text-white">{selectedEdge.id}</span>
-              </div>
-            </div>
-
-            {/* Quick Presets */}
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)] block">
-                Latency Preset
-              </label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {(
-                  [
-                    'same-machine',
-                    'same-datacenter',
-                    'cross-zone',
-                    'cross-region',
-                    'public-internet',
-                  ] as EdgePresetName[]
-                ).map((presetKey) => {
-                  const p = EDGE_PRESETS[presetKey];
-                  const isActive =
-                    selectedEdge.latency?.preset === presetKey ||
-                    (!selectedEdge.latency?.preset &&
-                      selectedEdge.latency?.baseLatencyMs === p.baseLatencyMs);
-
-                  return (
-                    <button
-                      key={presetKey}
-                      type="button"
-                      onClick={() => applyEdgePreset(selectedEdge.id, presetKey)}
-                      className={`p-2 rounded-lg text-left transition-all border ${
-                        isActive
-                          ? 'bg-white text-black font-bold border-white shadow-[0_0_8px_rgba(255,255,255,0.4)]'
-                          : 'bg-[#18181b] hover:bg-[#202024] text-white border-[#27272a] hover:border-white'
-                      }`}
-                    >
-                      <div className="text-[11px] truncate capitalize">{presetKey.replace('-', ' ')}</div>
-                      <div className={`text-[9px] ${isActive ? 'text-neutral-800' : 'text-[var(--color-text-muted)]'}`}>
-                        {p.baseLatencyMs}ms (±{p.jitterMs}ms)
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Manual Latency Sliders */}
-            <div className="p-3 bg-[#18181b] rounded-xl border border-[#27272a] space-y-3">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)]">
-                Custom Edge Latency
-              </div>
-
-              {/* Base Latency */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-[var(--color-text-muted)]">Base Latency:</span>
-                  <span className="text-white font-bold">{selectedEdge.latency?.baseLatencyMs ?? 0.5} ms</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="150"
-                  step="0.5"
-                  value={selectedEdge.latency?.baseLatencyMs ?? 0.5}
-                  onChange={(e) =>
-                    updateEdgeLatency(selectedEdge.id, {
-                      baseLatencyMs: parseFloat(e.target.value),
-                    })
-                  }
-                  className="w-full accent-white cursor-pointer"
-                />
-              </div>
-
-              {/* Jitter */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-[var(--color-text-muted)]">Jitter:</span>
-                  <span className="text-white font-bold">±{selectedEdge.latency?.jitterMs ?? 0.2} ms</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="40"
-                  step="0.5"
-                  value={selectedEdge.latency?.jitterMs ?? 0.2}
-                  onChange={(e) =>
-                    updateEdgeLatency(selectedEdge.id, {
-                      jitterMs: parseFloat(e.target.value),
-                    })
-                  }
-                  className="w-full accent-white cursor-pointer"
-                />
-              </div>
-
-              {/* Packet Loss */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-[var(--color-text-muted)]">Packet Loss:</span>
-                  <span className="text-white font-bold">
-                    {(((selectedEdge.latency?.packetLossPct ?? 0)) * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="0.10"
-                  step="0.005"
-                  value={selectedEdge.latency?.packetLossPct ?? 0}
-                  onChange={(e) =>
-                    updateEdgeLatency(selectedEdge.id, {
-                      packetLossPct: parseFloat(e.target.value),
-                    })
-                  }
-                  className="w-full accent-white cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* System-Wide Capacity & Bottleneck Overview when no node is selected */
-          <div className="p-4 space-y-4">
-            <div className="p-4 bg-[#18181b] rounded-xl border border-[#27272a] space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs uppercase font-bold tracking-wider text-white">
-                  System Capacity
-                </span>
-                <span className="text-xs font-mono font-bold text-white px-2 py-0.5 rounded bg-white/10 border border-white/20">
-                  ~{formatRps(capacity.sustainableRps, false)}
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-[11px] text-[var(--color-text-muted)]">Primary Bottleneck:</div>
-                <div className="text-xs font-bold font-mono text-white flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-white shadow-[0_0_6px_#ffffff]" />
-                  <span>{COMPONENT_RULES[capacity.bottleneckType]?.label ?? capacity.bottleneckType}</span>
-                </div>
-              </div>
-
-              <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed bg-[#111113] p-2.5 rounded-lg border border-[#222226]">
-                {capacity.explanation}
+              <p className="text-xs text-[#F3EEE3] leading-relaxed">
+                {rule?.label || selectedNode.type} — distributed system architectural primitive.
               </p>
+            </div>
 
-              {capacity.suggestedFixes.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-text-faint)]">
-                    Recommended Improvements:
-                  </span>
-                  <div className="flex flex-wrap gap-1">
-                    {capacity.suggestedFixes.map((f) => (
-                      <span
-                        key={f}
-                        className="px-2 py-0.5 rounded text-[11px] font-mono bg-white/10 text-white border border-white/20"
-                      >
-                        + Add {COMPONENT_RULES[f]?.label ?? f}
-                      </span>
-                    ))}
+            {/* Section 2: Why it is here */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-1">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                2. Why it is here
+              </div>
+              <p className="text-xs text-[#8F96A3] leading-relaxed">
+                {rule?.whyHere || 'Processes requests and coordinates business workflows.'}
+              </p>
+            </div>
+
+            {/* Section 3: Live metrics for current run OR static info before run */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-2">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                3. {isRunningOrFinished ? 'Live Metrics' : 'Static Capacity'}
+              </div>
+
+              {isRunningOrFinished && runtimeState ? (
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Utilization:</span>
+                    <span className="font-semibold text-[#F3EEE3]">
+                      {Math.round((runtimeState.utilization ?? 0) * 100)}%
+                    </span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Throughput:</span>
+                    <span className="text-[#F3EEE3]">
+                      {formatRps(runtimeState.currentRps ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Queue Depth:</span>
+                    <span className="text-[#F3EEE3]">
+                      {runtimeState.queueDepth ?? 0} requests
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Latency:</span>
+                    <span className="text-[#F3EEE3]">
+                      {formatLatency(runtimeState.p99LatencyMs ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Health State:</span>
+                    <span className="capitalize text-[#F3EEE3] font-medium">
+                      {runtimeState.status ?? 'nominal'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Rated Capacity:</span>
+                    <span className="text-[#F3EEE3]">
+                      {formatRps(capacity.componentBreakdown[selectedNode.id]?.effectiveCapacityRps ?? 2000)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#8F96A3]">Bottleneck Cap:</span>
+                    <span className="text-[#F3EEE3]">
+                      {formatRps(capacity.sustainableRps)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[#8F96A3] pt-1 leading-normal">
+                    {capacity.explanation}
+                  </p>
                 </div>
               )}
             </div>
 
-            {/* Component Capacity Breakdown List */}
-            <div className="space-y-2">
-              <span className="text-xs uppercase font-bold tracking-wider text-[var(--color-text-faint)] block px-1">
-                Component Throughput Limits
-              </span>
-              <div className="space-y-1.5">
-                {Object.values(capacity.componentBreakdown).map((comp) => (
-                  <div
-                    key={comp.nodeId}
-                    onClick={() => selectNode(comp.nodeId)}
-                    className="p-2.5 rounded-lg bg-[#18181b] hover:bg-[#202024] border border-[#27272a] hover:border-white transition-all cursor-pointer flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <div className="font-semibold text-white">
-                        {COMPONENT_RULES[comp.type]?.label ?? comp.type}
-                      </div>
-                      <div className="text-[10px] text-[var(--color-text-muted)] font-mono">
-                        {comp.nodeId} • Share: {formatPercent(comp.loadShare, true)}
-                      </div>
-                    </div>
-                    <div className="text-right font-mono">
-                      <div className="text-white font-bold">
-                        {comp.maxSustainableClientRps === Infinity
-                          ? '∞'
-                          : formatRps(comp.maxSustainableClientRps, false)}
-                      </div>
-                      <div className="text-[9px] text-[var(--color-text-faint)] truncate max-w-[100px]">
-                        {comp.limitingFactor}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            {/* Section 4: Configuration */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-3">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                4. Configuration
+              </div>
+              <ConfigForm node={selectedNode} />
+            </div>
+
+            {/* Section 5: Actions */}
+            <div className="py-4 space-y-3">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                5. Actions
+              </div>
+
+              {/* Swap options */}
+              {swapCandidates.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[11px] text-[#8F96A3]">Swap Component:</div>
+                  {swapCandidates.map((candidate) => (
+                    <button
+                      key={candidate}
+                      type="button"
+                      onClick={() => handleSwap(candidate)}
+                      className="w-full py-1.5 px-3 rounded bg-[#1B1E24] hover:bg-[#252932] text-[#F3EEE3] border border-[#2A2E39] hover:border-white transition-all text-xs text-left flex items-center justify-between cursor-pointer"
+                    >
+                      <span>Swap with {COMPONENT_RULES[candidate].label}</span>
+                      <span>⇄</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Remove Component */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  disabled={!removeCheck?.allowed}
+                  className={`w-full py-1.5 px-3 rounded text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
+                    removeCheck?.allowed
+                      ? 'bg-red-950/40 text-red-300 border border-red-800/80 hover:bg-red-900/60 cursor-pointer'
+                      : 'bg-[#1B1E24] text-[#6B7280] border border-[#2A2E39] cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  <span>Remove Component</span>
+                </button>
+                {!removeCheck?.allowed && removeCheck?.reason && (
+                  <p className="text-[10px] text-[#8F96A3] mt-1.5 leading-normal">
+                    {removeCheck.reason}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : selectedEdge ? (
+          <div>
+            {/* Header: Edge Connection */}
+            <div className="pb-4 border-b border-[#2A2E39]">
+              <h3 className="text-sm font-bold text-[#F3EEE3]">
+                {selectedEdge.source} → {selectedEdge.target}
+              </h3>
+              <div className="text-[10px] text-[#8F96A3] mt-0.5">
+                Type: {selectedEdge.kind || 'request'} edge
               </div>
             </div>
 
-            <div className="p-3 bg-[#111113] rounded-lg border border-[#222226] text-center text-[11px] text-[var(--color-text-faint)]">
-              Click any component to customize its capacity, latency, or concurrency.
+            {/* Section 1: What it carries */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-1">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                1. What it carries
+              </div>
+              <p className="text-xs text-[#F3EEE3] leading-relaxed">
+                {selectedEdge.kind === 'replication'
+                  ? 'Binary change data replication log stream.'
+                  : selectedEdge.kind === 'async'
+                  ? 'Asynchronous task queue payload.'
+                  : selectedEdge.isLookup
+                  ? 'DNS name resolution query & response.'
+                  : 'Synchronous HTTP/HTTPS application request & payload.'}
+              </p>
             </div>
+
+            {/* Section 2: Protocol & Latency/Loss Configuration */}
+            <div className="py-4 border-b border-[#2A2E39] space-y-3">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                2. Protocol & Latency Configuration
+              </div>
+
+              {/* Edge Presets */}
+              <div className="space-y-1">
+                <div className="text-[11px] text-[#8F96A3]">Network Presets:</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(Object.keys(EDGE_PRESETS) as EdgePresetName[]).map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => applyEdgePreset(selectedEdge.id, name)}
+                      className="py-1 px-2 rounded bg-[#1B1E24] hover:bg-[#252932] text-[10px] text-[#F3EEE3] border border-[#2A2E39] hover:border-white transition-all text-left truncate cursor-pointer"
+                    >
+                      {name.replace('-', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Latency Slider */}
+              <div className="space-y-1 pt-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#8F96A3]">Base Latency:</span>
+                  <span className="text-[#F3EEE3]">
+                    {selectedEdge.latency?.baseLatencyMs ?? 5} ms
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={250}
+                  value={selectedEdge.latency?.baseLatencyMs ?? 5}
+                  onChange={(e) =>
+                    updateEdgeLatency(selectedEdge.id, {
+                      baseLatencyMs: Number(e.target.value),
+                    })
+                  }
+                  className="w-full accent-[#F3EEE3] h-1 bg-[#2A2E39] rounded appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* Packet Loss Slider */}
+              <div className="space-y-1 pt-1">
+                <div className="flex justify-between text-xs">
+                  <span className="text-[#8F96A3]">Packet Loss:</span>
+                  <span className="text-[#F3EEE3]">
+                    {selectedEdge.latency?.packetLossPct ?? 0} %
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  value={selectedEdge.latency?.packetLossPct ?? 0}
+                  onChange={(e) =>
+                    updateEdgeLatency(selectedEdge.id, {
+                      packetLossPct: Number(e.target.value),
+                    })
+                  }
+                  className="w-full accent-[#F3EEE3] h-1 bg-[#2A2E39] rounded appearance-none cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Section 3: Current Flow Metrics */}
+            <div className="py-4 space-y-2">
+              <div className="text-[10px] uppercase font-bold text-[#8F96A3] tracking-widest">
+                3. Flow Metrics
+              </div>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-[#8F96A3]">Status:</span>
+                  <span className="text-[#F3EEE3]">Active Transmit</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#8F96A3]">Transfer Mode:</span>
+                  <span className="text-[#F3EEE3]">
+                    {selectedEdge.kind || 'direct'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="py-12 text-center text-[#8F96A3] space-y-2">
+            <p className="text-xs">No component selected.</p>
+            <p className="text-[11px] text-[#6B7280]">
+              Click any node or edge on the canvas to inspect its configuration and metrics.
+            </p>
           </div>
         )}
       </div>
     </aside>
   );
 };
+
+export default InspectorPanel;

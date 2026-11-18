@@ -1,10 +1,11 @@
 /**
  * Free-Floating Health Indicator & Unboxed Dropdown.
- * Section 5 Specification:
+ * Section 5 / A5 Specification:
  * - Free-floating text in the canvas (no box, no border, no background) at top right.
  * - Status dot, status word, RPS, error percentage, caret.
- * - Clicking opens a similarly unboxed dropdown of details (overview metrics, health reason, link to full dashboard).
- * - Typography only, no cards.
+ * - Clicking opens a similarly UNBOXED dropdown of details:
+ *   Unboxed typography only (no border, no card, no close button).
+ *   Closes on outside click or Esc.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -43,7 +44,7 @@ export const HealthIndicator: React.FC = () => {
 
   const dotColor = isHealthy ? '#008604' : health.status === 'degraded' ? '#F59E0B' : '#D9541E';
 
-  // Outside click & escape listener
+  // Outside click & escape listener per A5
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -74,79 +75,69 @@ export const HealthIndicator: React.FC = () => {
         title="Simulation Health Status & Telemetry (Click for details)"
         aria-label="Simulation Health Indicator"
         aria-expanded={isOpen}
-        className="flex items-center gap-2 text-[11px] font-normal text-white hover:opacity-80 transition-opacity bg-transparent border-none p-0 cursor-pointer outline-none"
+        className="flex items-center gap-2 text-[11px] font-normal text-[#F3EEE3] hover:opacity-80 transition-opacity bg-transparent border-none p-0 cursor-pointer outline-none"
       >
         <span
           className="w-2 h-2 rounded-full inline-block shrink-0"
           style={{ backgroundColor: dotColor }}
         />
         <span className="capitalize">{health.status}</span>
-        <span className="text-[#A1A1AA]">{currentRps.toLocaleString()} RPS</span>
-        <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#A1A1AA]'}>
+        <span className="text-[#8F96A3]">{currentRps.toLocaleString()} RPS</span>
+        <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#8F96A3]'}>
           {errorPct}% err
         </span>
-        <span className="text-[#71717A] text-[9px] ml-0.5">▾</span>
+        <span className="text-[#8F96A3] text-[9px] ml-0.5">▾</span>
       </button>
 
-      {/* 2. Unboxed Typographic Details Dropdown */}
+      {/* 2. Unboxed Typographic Details Dropdown (no border, no card, no close button) */}
       {isOpen && (
         <div
-          className="absolute right-0 top-full mt-2 w-72 bg-[#0B0B0D]/95 border border-[#27272A] rounded-lg p-3.5 shadow-2xl text-xs space-y-2.5 backdrop-blur-md animate-in fade-in slide-in-from-top-1 duration-150"
+          className="absolute right-0 top-full mt-3 w-72 p-3 bg-[#0B0B0D] text-xs space-y-2 select-text font-mono animate-in fade-in duration-150"
           role="dialog"
           aria-label="System Health Overview"
         >
-          {/* Header row */}
-          <div className="flex items-center justify-between pb-1.5 border-b border-[#27272A]">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: dotColor }} />
-              <span className="font-bold text-[#F3EEE3] tracking-wide uppercase text-[11px]">
-                System {health.status}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="text-[#71717A] hover:text-white"
-              aria-label="Close health details"
-            >
-              ✕
-            </button>
+          {/* Header text (no box, no close button) */}
+          <div className="flex items-center gap-1.5 pb-1">
+            <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: dotColor }} />
+            <span className="font-bold text-[#F3EEE3] tracking-wide uppercase text-[11px]">
+              System {health.status}
+            </span>
           </div>
 
           {/* Health diagnosis reason */}
-          <div className="text-[11px] text-[#A1A1AA] leading-relaxed">
+          <div className="text-[11px] text-[#8F96A3] leading-relaxed">
             {health.reason}
           </div>
 
           {/* Key telemetry readout */}
-          <div className="pt-1.5 border-t border-[#1E1E22] space-y-1 text-[11px]">
+          <div className="pt-2 space-y-1 text-[11px]">
             <div className="flex justify-between">
-              <span className="text-[#71717A]">Incoming Rate:</span>
-              <span className="text-white font-medium">{currentRps.toLocaleString()} req/s</span>
+              <span className="text-[#8F96A3]">Rate:</span>
+              <span className="text-[#F3EEE3] font-medium">{currentRps.toLocaleString()} req/s</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#71717A]">Errors / Drops:</span>
-              <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-white'}>
+              <span className="text-[#8F96A3]">Errors / Drops:</span>
+              <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#F3EEE3]'}>
                 {errorPct}% ({totalErrors} failed)
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#71717A]">In-Flight:</span>
-              <span className="text-white font-medium">
+              <span className="text-[#8F96A3]">In-Flight:</span>
+              <span className="text-[#F3EEE3] font-medium">
                 {system?.inFlightRequests ?? 0} requests
               </span>
             </div>
           </div>
 
           {/* Link to full metrics dashboard */}
-          <div className="pt-2 border-t border-[#27272A]">
+          <div className="pt-2">
             <button
               type="button"
               onClick={() => {
                 setIsOpen(false);
                 setDashboardState('expanded');
               }}
-              className="text-[#D9541E] hover:underline font-semibold text-[11px] block transition-colors cursor-pointer"
+              className="text-[#D9541E] hover:underline font-medium text-[11px] block transition-colors cursor-pointer bg-transparent border-none p-0 text-left"
             >
               Open full metrics dashboard →
             </button>

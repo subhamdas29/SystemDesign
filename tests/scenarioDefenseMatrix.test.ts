@@ -32,9 +32,24 @@ describe('Scenario Defense Matrix Verification (Phase 8B)', () => {
       ],
     };
 
-    // 1. No Defense
+    // 1. No Defense (CDN present in starter graph, but with ddosProtection set to 'none')
+    const starterNoDef = {
+      ...starter,
+      nodes: starter.nodes.map((n) =>
+        n.type === 'cdn'
+          ? {
+              ...n,
+              config: {
+                ...(n.config as CdnConfig),
+                ddosProtection: 'none' as const,
+              },
+            }
+          : n
+      ),
+    };
+
     const simNoDef = createAggregateSimulation({
-      graph: starter,
+      graph: starterNoDef,
       traffic,
       campaign,
       seed: 42,
@@ -42,7 +57,7 @@ describe('Scenario Defense Matrix Verification (Phase 8B)', () => {
     simNoDef.advanceTo(5000);
     const snapNoDef = simNoDef.getSnapshot();
     const summaryNoDef = buildRunSummary({
-      graph: starter,
+      graph: starterNoDef,
       traffic,
       seed: 42,
       samples: [],
@@ -50,16 +65,15 @@ describe('Scenario Defense Matrix Verification (Phase 8B)', () => {
     }).summary;
 
     // 2. Recommended Defense: CDN with Advanced DDoS Protection
-    let cdnGraph = addComponent(starter, 'cdn');
-    cdnGraph = {
-      ...cdnGraph,
-      nodes: cdnGraph.nodes.map((n) => {
+    let cdnGraph = {
+      ...starter,
+      nodes: starter.nodes.map((n) => {
         if (n.type === 'cdn') {
           return {
             ...n,
             config: {
               ...(n.config as CdnConfig),
-              ddosProtection: 'advanced',
+              ddosProtection: 'advanced' as const,
               enabled: true,
             },
           };
@@ -92,7 +106,7 @@ describe('Scenario Defense Matrix Verification (Phase 8B)', () => {
     expect(summaryRec.defenseReport?.previousRunDelta?.maliciousBlockedPercentDiff).toBeGreaterThan(0);
 
     // 3. Irrelevant Defense: WAF only without CDN
-    const wafGraph = addComponent(starter, 'waf');
+    const wafGraph = addComponent(starterNoDef, 'waf');
     const simIrr = createAggregateSimulation({
       graph: wafGraph,
       traffic,

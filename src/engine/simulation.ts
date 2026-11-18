@@ -1941,9 +1941,10 @@ export function createDiscreteSimulation(config: SimulationConfig): Simulation {
         }
       }
 
-      // Connection Limits on App Server / Reverse Proxy
+      // Connection Limits on App Server
+      const isHttpEntryOrApp = (node.type as string) === 'app-server';
       const connLimits = (node.config as { connectionLimits?: ConnectionLimitsConfig })?.connectionLimits;
-      let effectiveHoldMs = req.trafficClass?.connectionHoldMs ?? 0;
+      let effectiveHoldMs = isHttpEntryOrApp ? (req.trafficClass?.connectionHoldMs ?? 0) : 0;
       if (connLimits?.enabled && connLimits.headerTimeoutMs > 0 && effectiveHoldMs > 0) {
         effectiveHoldMs = Math.min(effectiveHoldMs, connLimits.headerTimeoutMs);
       }

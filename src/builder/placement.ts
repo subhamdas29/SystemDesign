@@ -299,7 +299,11 @@ export function canRemove(graph: GraphConfig, nodeId: string): CanRemoveResult {
   }
 
   if (node.type === 'client') {
-    return { allowed: false, reason: 'The Client node originates all traffic and cannot be removed.' };
+    return { allowed: false, reason: 'The Client node originates all traffic and is compulsory in the Main layer.' };
+  }
+
+  if (node.type === 'cdn') {
+    return { allowed: false, reason: 'Cloud CDN is compulsory in the Main layer to handle edge traffic caching.' };
   }
 
   if (node.type === 'app-server') {
@@ -350,10 +354,6 @@ export function canRemove(graph: GraphConfig, nodeId: string): CanRemoveResult {
         allowed: false,
         reason: 'Cannot remove Primary Database while Read Replicas replicate from it. Remove Replicas first.',
       };
-    }
-    const dbCount = graph.nodes.filter((n) => n.type === 'database').length;
-    if (dbCount <= 1) {
-      return { allowed: false, reason: 'The architecture requires at least one primary Database to store persistent data.' };
     }
   }
 
@@ -531,7 +531,7 @@ export function validateGraph(graph: GraphConfig): ValidationResult {
 }
 
 /**
- * Standard starter architecture graph: Client -> App Server -> Database.
+ * Standard starter architecture graph: Client -> CDN -> App Server -> Database.
  */
 export function createStarterGraph(): GraphConfig {
   const clientNode: GraphNode = {
@@ -539,6 +539,13 @@ export function createStarterGraph(): GraphConfig {
     type: 'client',
     config: getDefaultConfig('client'),
     label: COMPONENT_RULES.client.label,
+  };
+
+  const cdnNode: GraphNode = {
+    id: 'cdn-1',
+    type: 'cdn',
+    config: getDefaultConfig('cdn'),
+    label: COMPONENT_RULES.cdn.label,
   };
 
   const appServerNode: GraphNode = {
@@ -555,7 +562,7 @@ export function createStarterGraph(): GraphConfig {
     label: COMPONENT_RULES.database.label,
   };
 
-  const nodes = [clientNode, appServerNode, dbNode];
+  const nodes = [clientNode, cdnNode, appServerNode, dbNode];
   const edges = generateEdges(nodes);
 
   return {

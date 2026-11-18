@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { EdgeProps, getSmoothStepPath, BaseEdge, EdgeLabelRenderer } from '@xyflow/react';
 import { useSimulationStore, selectActiveFailures } from '../../store/simulationStore';
 import { useUiStore, selectSelectedEdgeId } from '../../store/uiStore';
@@ -17,6 +17,7 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
   data,
   markerEnd,
 }) => {
+  const [isHovered, setIsHovered] = useState(false);
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -28,7 +29,7 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
   });
 
   const latency = (data as { latency?: EdgeLatencyConfig })?.latency;
-  const isThreatEdge = source === 'threat-source' || target === 'threat-source';
+  const isThreatEdge = source === 'threat-source' || target === 'threat-source' || (data as { isThreatEdge?: boolean })?.isThreatEdge;
   const activeFailures = useSimulationStore(selectActiveFailures);
   const selectedEdgeId = useUiStore(selectSelectedEdgeId);
   const selectEdge = useUiStore((s) => s.selectEdge);
@@ -40,29 +41,50 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
     latency && (latency.baseLatencyMs > 1 || (latency.packetLossPct ?? 0) > 0)
   );
 
+  // Stroke color: orange for threat edge or selected; failure red; nominal white
   const strokeColor = isThreatEdge
     ? '#D9541E'
     : isSelected
     ? '#D9541E'
     : edgeFailure
-    ? '#EF4444'
+    ? '#FF5C5C'
     : '#FFFFFF';
 
+  // Show edge latency ONLY on hover or when edge is selected per A7
+  const showLatencyChip = (isHovered || isSelected) && (hasLatencyCustomization || edgeFailure);
+
   return (
-    <>
+    <g
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="cursor-pointer"
+    >
+      {/* Invisible wide interaction path for comfortable hover & selection */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectEdge(id);
+        }}
+      />
+
+      {/* Dotted edge with round-cap dots per A10 (2px dot, 6px gap) */}
       <BaseEdge
         id={id}
         path={edgePath}
         markerEnd={markerEnd ?? 'url(#open-arrowhead)'}
-        interactionWidth={20}
         style={{
           stroke: strokeColor,
           strokeWidth: 2,
-          strokeDasharray: '4 4',
+          strokeDasharray: '0.1 6',
+          strokeLinecap: 'round',
         }}
       />
 
-      {(hasLatencyCustomization || edgeFailure || isSelected) && (
+      {showLatencyChip && (
         <EdgeLabelRenderer>
           <div
             onClick={(e) => {
@@ -74,14 +96,14 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               pointerEvents: 'all',
             }}
-            className="cursor-pointer z-10"
+            className="cursor-pointer z-10 font-mono"
           >
             {hasLatencyCustomization && latency && (
               <span
                 className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
                   isSelected
-                    ? 'bg-[#2C2C2C] text-[#D9541E] border-[#D9541E]'
-                    : 'bg-[#0B0B0D] text-[#A1A1AA] border-[#27272A]'
+                    ? 'bg-[#15181E] text-[#D9541E] border-[#D9541E]'
+                    : 'bg-[#15181E] text-[#8F96A3] border-[#2A2E39]'
                 }`}
               >
                 {latency.baseLatencyMs}ms
@@ -89,14 +111,14 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
             )}
 
             {edgeFailure && (
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#2C2C2C] text-[#EF4444] border border-[#EF4444]">
-                ERR
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#15181E] text-[#FF5C5C] border border-[#FF5C5C] ml-1">
+                FAIL
               </span>
             )}
           </div>
         </EdgeLabelRenderer>
       )}
-    </>
+    </g>
   );
 });
 

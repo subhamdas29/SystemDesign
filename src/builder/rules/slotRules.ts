@@ -212,10 +212,10 @@ export const COMPONENT_RULES: Record<ComponentType, ComponentSlotRule> = {
     label: 'Primary Database',
     slot: 11,
     maxCount: 1,
-    minCount: 1,
+    minCount: 0,
     fanOut: false,
     requires: [],
-    removable: true, // Cannot remove if cache depends on it or if it's the only primary
+    removable: true,
     pathBehavior: 'terminal',
     enabledInRelease: 'v1',
     whyHere: 'The authoritative source of persistent data for all business transactions.',

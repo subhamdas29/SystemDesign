@@ -129,7 +129,7 @@ export const LegacyPanelsModal: React.FC<LegacyPanelsModalProps> = ({ isOpen, on
               Legacy Panels & Feature Directory
             </h2>
             <p className="text-[11px] text-[#A1A1AA]">
-              Temporary access to all pre-redesign tools per Section 6 and /docs/ia.md.
+              Temporary access to all pre-redesign feature suites.
             </p>
           </div>
           <button

@@ -198,16 +198,16 @@ export const Header: React.FC = () => {
     <div className="w-full flex flex-col shrink-0 select-none z-20">
       {/* 1. TOP BAR (Cream #F3EEE3, height 80px) */}
       <header
-        className="h-20 w-full px-6 flex items-center justify-between border-b border-[#E2DDD1]"
+        className="h-20 w-full px-3 md:px-6 flex items-center justify-between border-b border-[#E2DDD1]"
         style={{ backgroundColor: '#F3EEE3' }}
         aria-label="Application Top Navigation"
       >
         {/* Left: Brand Logo */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
           <img
             src={logoWebp}
             alt="Life of a Request"
-            className="h-9 w-auto object-contain cursor-pointer"
+            className="h-8 md:h-9 w-auto object-contain cursor-pointer"
             draggable={false}
             onClick={() => setActiveNavTab('create')}
           />
@@ -215,7 +215,7 @@ export const Header: React.FC = () => {
 
         {/* Center: Navigation Tabs (Roboto Mono, Bold, 16px) */}
         <nav
-          className="h-full flex items-center gap-8 font-mono text-[16px] font-bold tracking-tight"
+          className="h-full flex items-center gap-3 sm:gap-4 md:gap-6 lg:gap-8 font-mono text-[13px] sm:text-[14px] md:text-[16px] font-bold tracking-tight"
           aria-label="Primary Navigation"
         >
           {(['create', 'problems', 'presets', 'interview'] as NavTab[]).map((tab) => {

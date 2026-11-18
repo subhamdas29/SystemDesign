@@ -20,18 +20,21 @@ describe('Guided Placement Engine', () => {
     graph = addComponent(graph, 'load-balancer');
     expect(graph.nodes.map((n) => n.type)).toEqual([
       'client',
+      'cdn',
       'load-balancer',
       'app-server',
       'database',
     ]);
 
-    expect(graph.edges).toHaveLength(3);
+    expect(graph.edges).toHaveLength(4);
     expect(graph.edges[0]!.source).toBe('client-1');
-    expect(graph.edges[0]!.target).toBe('load-balancer-1');
-    expect(graph.edges[1]!.source).toBe('load-balancer-1');
-    expect(graph.edges[1]!.target).toBe('app-server-1');
-    expect(graph.edges[2]!.source).toBe('app-server-1');
-    expect(graph.edges[2]!.target).toBe('database-1');
+    expect(graph.edges[0]!.target).toBe('cdn-1');
+    expect(graph.edges[1]!.source).toBe('cdn-1');
+    expect(graph.edges[1]!.target).toBe('load-balancer-1');
+    expect(graph.edges[2]!.source).toBe('load-balancer-1');
+    expect(graph.edges[2]!.target).toBe('app-server-1');
+    expect(graph.edges[3]!.source).toBe('app-server-1');
+    expect(graph.edges[3]!.target).toBe('database-1');
 
     const validation = validateGraph(graph);
     expect(validation.valid).toBe(true);
@@ -71,16 +74,21 @@ describe('Guided Placement Engine', () => {
     graph = addComponent(graph, 'cache');
     expect(graph.nodes.map((n) => n.type)).toEqual([
       'client',
+      'cdn',
       'app-server',
       'cache',
       'database',
     ]);
 
-    expect(graph.edges).toHaveLength(3);
-    expect(graph.edges[1]!.source).toBe('app-server-1');
-    expect(graph.edges[1]!.target).toBe('cache-1');
-    expect(graph.edges[2]!.source).toBe('cache-1');
-    expect(graph.edges[2]!.target).toBe('database-1');
+    expect(graph.edges).toHaveLength(4);
+    expect(graph.edges[0]!.source).toBe('client-1');
+    expect(graph.edges[0]!.target).toBe('cdn-1');
+    expect(graph.edges[1]!.source).toBe('cdn-1');
+    expect(graph.edges[1]!.target).toBe('app-server-1');
+    expect(graph.edges[2]!.source).toBe('app-server-1');
+    expect(graph.edges[2]!.target).toBe('cache-1');
+    expect(graph.edges[3]!.source).toBe('cache-1');
+    expect(graph.edges[3]!.target).toBe('database-1');
 
     const validation = validateGraph(graph);
     expect(validation.valid).toBe(true);
@@ -105,16 +113,20 @@ describe('Guided Placement Engine', () => {
     expect(removeCheck.allowed).toBe(true);
 
     graph = removeComponent(graph, 'cache-1');
-    expect(graph.nodes.map((n) => n.type)).toEqual(['client', 'app-server', 'database']);
-    expect(graph.edges[1]!.source).toBe('app-server-1');
-    expect(graph.edges[1]!.target).toBe('database-1');
+    expect(graph.nodes.map((n) => n.type)).toEqual(['client', 'cdn', 'app-server', 'database']);
+    expect(graph.edges).toHaveLength(3);
+    expect(graph.edges[1]!.source).toBe('cdn-1');
+    expect(graph.edges[1]!.target).toBe('app-server-1');
+    expect(graph.edges[2]!.source).toBe('app-server-1');
+    expect(graph.edges[2]!.target).toBe('database-1');
   });
 
-  it('blocks removing Client or the only App Server or Database', () => {
+  it('blocks removing compulsory components (Client, CDN, App Server) and allows removing standalone Database', () => {
     const graph = createStarterGraph();
     expect(canRemove(graph, 'client-1').allowed).toBe(false);
+    expect(canRemove(graph, 'cdn-1').allowed).toBe(false);
     expect(canRemove(graph, 'app-server-1').allowed).toBe(false);
-    expect(canRemove(graph, 'database-1').allowed).toBe(false);
+    expect(canRemove(graph, 'database-1').allowed).toBe(true);
   });
 
   it('blocks removing Database if Cache is present', () => {
@@ -137,9 +149,11 @@ describe('Guided Placement Engine', () => {
 
     // Edges remain connected
     expect(graph.edges[0]!.source).toBe('client-1');
-    expect(graph.edges[0]!.target).toBe('load-balancer-1');
-    expect(graph.edges[1]!.source).toBe('load-balancer-1');
-    expect(graph.edges[1]!.target).toBe('app-server-1');
+    expect(graph.edges[0]!.target).toBe('cdn-1');
+    expect(graph.edges[1]!.source).toBe('cdn-1');
+    expect(graph.edges[1]!.target).toBe('load-balancer-1');
+    expect(graph.edges[2]!.source).toBe('load-balancer-1');
+    expect(graph.edges[2]!.target).toBe('app-server-1');
 
     const validation = validateGraph(graph);
     expect(validation.valid).toBe(true);
