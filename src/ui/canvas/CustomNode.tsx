@@ -138,7 +138,7 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
           className={`
             text-[12px] font-mono leading-tight break-words whitespace-normal line-clamp-2 inline-block transition-all
             ${isThreatSource ? 'text-[#D9541E]' : 'text-[#F3EEE3]'}
-            ${isFailed ? 'line-through text-[#8F96A3]' : ''}
+            ${isFailed ? 'line-through text-[#8E8E8E]' : ''}
             ${
               isSelected
                 ? 'border-b-2 border-[#D9541E] pb-0.5'
@@ -151,8 +151,8 @@ export const CustomNode: React.FC<NodeProps> = memo(({ id, data, selected }) => 
           {displayName}
         </div>
 
-        {/* Utilization %: Roboto Mono, 10px, secondary grey #8F96A3 (NO blue) */}
-        <div className="mt-1 text-[10px] font-mono text-[#8F96A3] flex items-center justify-center gap-1">
+        {/* Utilization %: Roboto Mono, 10px, secondary grey #8E8E8E (NO blue) */}
+        <div className="mt-1 text-[10px] font-mono text-[#8E8E8E] flex items-center justify-center gap-1">
           <span>{Math.round(utilization * 100)}%</span>
           {queueDepth > 0 && <span>· Q:{queueDepth}</span>}
         </div>

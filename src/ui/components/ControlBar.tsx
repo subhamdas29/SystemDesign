@@ -99,6 +99,14 @@ export const ControlBar: React.FC = () => {
     }
   };
 
+  // Main button label rule: "Play" when idle at 0ms, "Pause" while running, "Resume" only when paused after progress (>0ms)
+  const playButtonLabel =
+    status === 'running'
+      ? 'Pause'
+      : status === 'paused' && simTimeMs > 0
+      ? 'Resume'
+      : 'Play';
+
   return (
     <>
       <footer
@@ -124,7 +132,7 @@ export const ControlBar: React.FC = () => {
               }
             `}
           >
-            <span>{status === 'running' ? 'Pause' : status === 'paused' ? 'Resume' : 'Play'}</span>
+            <span>{playButtonLabel}</span>
           </button>
 
           <button
@@ -182,7 +190,7 @@ export const ControlBar: React.FC = () => {
             aria-label="Simulation Time Slider"
           />
 
-          <span className="font-mono text-[10px] md:text-[11px] text-[#8F96A3] w-10 md:w-12 shrink-0">
+          <span className="font-mono text-[10px] md:text-[11px] text-[#8E8E8E] w-10 md:w-12 shrink-0">
             {durationMs}ms
           </span>
         </div>
@@ -207,7 +215,7 @@ export const ControlBar: React.FC = () => {
                 type="button"
                 onClick={() => setDisplayMode('individual')}
                 className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
-                  displayMode === 'individual' ? 'bg-[#656565] text-white font-bold' : 'text-[#8F96A3] hover:text-white'
+                  displayMode === 'individual' ? 'bg-[#656565] text-white font-bold' : 'text-[#8E8E8E] hover:text-white'
                 }`}
               >
                 Packets
@@ -216,7 +224,7 @@ export const ControlBar: React.FC = () => {
                 type="button"
                 onClick={() => setDisplayMode('aggregate')}
                 className={`h-6 px-2 rounded text-[10px] font-mono transition-all ${
-                  displayMode === 'aggregate' ? 'bg-[#656565] text-white font-bold' : 'text-[#8F96A3] hover:text-white'
+                  displayMode === 'aggregate' ? 'bg-[#656565] text-white font-bold' : 'text-[#8E8E8E] hover:text-white'
                 }`}
               >
                 Flow
@@ -264,7 +272,7 @@ export const ControlBar: React.FC = () => {
               <div className="absolute right-0 bottom-full mb-2 w-56 bg-[#1B1E24] border border-[#2A2E39] rounded shadow-2xl p-3 text-xs space-y-2.5 z-50 font-mono animate-in fade-in duration-150">
                 {/* Speed Controls */}
                 <div>
-                  <div className="text-[10px] text-[#8F96A3] mb-1">Sim Speed</div>
+                  <div className="text-[10px] text-[#8E8E8E] mb-1">Sim Speed</div>
                   <div className="flex items-center gap-1 bg-[#15181E] p-0.5 rounded border border-[#2A2E39]">
                     {([1, 2, 4, 8] as SimulationSpeed[]).map((s) => (
                       <button
@@ -275,7 +283,7 @@ export const ControlBar: React.FC = () => {
                           setIsMoreOpen(false);
                         }}
                         className={`flex-1 py-1 rounded text-[10px] ${
-                          speed === s ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                          speed === s ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8E8E8E]'
                         }`}
                       >
                         {s}x
@@ -286,7 +294,7 @@ export const ControlBar: React.FC = () => {
 
                 {/* Display Mode */}
                 <div>
-                  <div className="text-[10px] text-[#8F96A3] mb-1">Display Mode</div>
+                  <div className="text-[10px] text-[#8E8E8E] mb-1">Display Mode</div>
                   <div className="flex items-center gap-1 bg-[#15181E] p-0.5 rounded border border-[#2A2E39]">
                     <button
                       type="button"
@@ -295,7 +303,7 @@ export const ControlBar: React.FC = () => {
                         setIsMoreOpen(false);
                       }}
                       className={`flex-1 py-1 rounded text-[10px] ${
-                        displayMode === 'individual' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                        displayMode === 'individual' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8E8E8E]'
                       }`}
                     >
                       Packets
@@ -307,7 +315,7 @@ export const ControlBar: React.FC = () => {
                         setIsMoreOpen(false);
                       }}
                       className={`flex-1 py-1 rounded text-[10px] ${
-                        displayMode === 'aggregate' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8F96A3]'
+                        displayMode === 'aggregate' ? 'bg-[#F3EEE3] text-[#15181E] font-bold' : 'text-[#8E8E8E]'
                       }`}
                     >
                       Flow

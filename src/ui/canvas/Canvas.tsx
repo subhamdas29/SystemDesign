@@ -18,6 +18,9 @@ import { useUiStore, selectDraggingSwapNodeId, selectIsFocusMode } from '@store'
 import {
   useSimulationStore,
   selectHighlightedPath,
+  selectVisualizationDisplayMode,
+  selectSimPlayStatus,
+  selectSimRps,
 } from '@store';
 import { useAttackStore } from '@store';
 import { computeLayout, COMPONENT_RULES, canSwap } from '@builder';
@@ -41,7 +44,12 @@ const CanvasInner: React.FC = () => {
   const setDraggingSwapNodeId = useUiStore((s) => s.setDraggingSwapNodeId);
   const draggingSwapNodeId = useUiStore(selectDraggingSwapNodeId);
   const isFocusMode = useUiStore(selectIsFocusMode);
+  const isInventoryOpen = useUiStore((s) => s.isInventoryOpen);
+  const isInspectorOpen = useUiStore((s) => s.isInspectorOpen);
   const highlightedPath = useSimulationStore(selectHighlightedPath);
+  const displayMode = useSimulationStore(selectVisualizationDisplayMode);
+  const status = useSimulationStore(selectSimPlayStatus);
+  const simRps = useSimulationStore(selectSimRps);
   const isAttackerMode = useAttackStore((s) => s.isAttackerMode);
 
   const { fitView, zoomIn, zoomOut } = useReactFlow();
@@ -164,6 +172,14 @@ const CanvasInner: React.FC = () => {
     };
   }, [graph.version, fitView]);
 
+  // Re-fit graph (animated, 200 ms ease-out) when Inventory or Inspector opens/closes (Item 9b)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitView({ padding: 0.2, minZoom: 0.6, maxZoom: 1.2, duration: 200 });
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [isInventoryOpen, isInspectorOpen, fitView]);
+
   const handleFitAll = () => {
     fitView({ padding: 0.2, minZoom: 0.7, maxZoom: 1.2, duration: 300 });
   };
@@ -232,6 +248,14 @@ const CanvasInner: React.FC = () => {
     <div className="w-full h-full relative" style={{ backgroundColor: '#0B0B0D' }}>
       {/* Free-floating Health Indicator (Section 5 / A5) - Hidden in Eye mode */}
       {!isFocusMode && <HealthIndicator />}
+
+      {/* Aggregate Flow readout badge (Item 13) */}
+      {!isFocusMode && displayMode === 'aggregate' && (status === 'running' || status === 'paused') && (
+        <div className="absolute top-4 left-6 z-10 px-3 py-1 rounded bg-[#15181E] border border-[#2A2E39] font-mono text-[11px] text-[#F3EEE3] shadow-md flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#D9541E] animate-pulse" />
+          <span>Simulating {simRps.toLocaleString()} req/s | showing 20 sampled</span>
+        </div>
+      )}
 
       <ReactFlow
         nodes={flowNodes}

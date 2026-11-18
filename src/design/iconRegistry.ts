@@ -23,9 +23,9 @@ import inventorySvg from '../assets/icons/inventory.svg?raw';
 import kafkaSvg from '../assets/icons/kafka.svg?raw';
 import layersSvg from '../assets/icons/Layers.svg?raw';
 import loadBalancerSvg from '../assets/icons/load-balancer.svg?raw';
-import nginxReverseProxySvg from '../assets/icons/nginx-reverse-proxy.svg?raw';
 import rateLimiterSvg from '../assets/icons/rate-limiter.svg?raw';
 import redisSvg from '../assets/icons/redis.svg?raw';
+import routerSvg from '../assets/icons/router.svg?raw';
 import shareSvg from '../assets/icons/share.svg?raw';
 import threatSvg from '../assets/icons/threat.svg?raw';
 import userSvg from '../assets/icons/User.svg?raw';
@@ -80,8 +80,8 @@ const COMPONENT_ICONS: Record<string, string> = {
   firewall: firewallSvg,
   'threat-source': threatSvg,
   threat: threatSvg,
-  // Note: 'router' uses reverse proxy SVG as temporary bridge
-  router: nginxReverseProxySvg,
+  // Crisp 2px line-art icons
+  router: routerSvg,
 };
 
 /** UI action icons map */
@@ -98,9 +98,20 @@ const UI_ACTION_ICONS: Record<string, string> = {
   caret_down: arrowDropDownSvg,
 };
 
+/** Components with custom 2px line placeholders rather than direct Figma exports */
+export const PLACEHOLDER_COMPONENTS = new Set<string>([
+  'router',
+  'firewall',
+  'database-replica',
+  'worker',
+]);
+
 /** Missing icons cataloged for user visibility */
 export const MISSING_ICONS = [
-  'router (dedicated router icon missing from /design-reference/icons; currently aliased to nginx-reverse-proxy.svg)',
+  'router (missing from Figma /design-reference/icons; replaced with 2px line-art router placeholder)',
+  'firewall (missing from Figma /design-reference/icons; replaced with 2px line-art firewall placeholder)',
+  'database-replica (missing from Figma /design-reference/icons; replaced with 2px line-art replica placeholder)',
+  'worker (missing from Figma /design-reference/icons; replaced with 2px line-art worker placeholder)',
   'play (UI action without dedicated SVG in /design-reference/icons; rendered as text label per section 4)',
   'pause (UI action without dedicated SVG; rendered as text label per section 4)',
   'step (UI action without dedicated SVG; rendered as text label per section 4)',
@@ -118,6 +129,11 @@ export const MISSING_ICONS = [
  * Logs a dev warning and returns a neutral placeholder if missing.
  */
 export function getComponentIconSvg(key: ComponentIconKey | string): string {
+  if (PLACEHOLDER_COMPONENTS.has(key)) {
+    if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+      console.warn(`[IconRegistry] Using 2px stroke line-art placeholder icon for: "${key}".`);
+    }
+  }
   const svg = COMPONENT_ICONS[key];
   if (!svg) {
     if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {

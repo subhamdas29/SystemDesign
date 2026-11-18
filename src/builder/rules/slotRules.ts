@@ -280,6 +280,74 @@ export const COMPONENT_RULES: Record<ComponentType, ComponentSlotRule> = {
   },
 };
 
+export interface ComponentDescription {
+  whatItIs: string;
+  whyHere: string;
+}
+
+export const COMPONENT_DESCRIPTIONS: Record<ComponentType, ComponentDescription> = {
+  client: {
+    whatItIs: 'The web browser or mobile app used by visitors.',
+    whyHere: 'Starts every user interaction by sending requests into your system.',
+  },
+  dns: {
+    whatItIs: 'The internet address directory translating names to IPs.',
+    whyHere: 'Directs clients to the correct server IP before any connection begins.',
+  },
+  cdn: {
+    whatItIs: 'Worldwide edge cache delivering content close to users.',
+    whyHere: 'Serves static content quickly and shields origins from traffic bursts.',
+  },
+  router: {
+    whatItIs: 'Network gateway directing traffic packets across hops.',
+    whyHere: 'Routes incoming packets toward the proper destination subnet.',
+  },
+  firewall: {
+    whatItIs: 'Traffic guard inspecting network IP packets and ports.',
+    whyHere: 'Blocks malicious IP traffic before it reaches internal services.',
+  },
+  waf: {
+    whatItIs: 'Web application firewall inspecting HTTP request payloads.',
+    whyHere: 'Blocks SQL injection, cross-site scripting, and web exploit attacks.',
+  },
+  'rate-limiter': {
+    whatItIs: 'Traffic meter capping requests per client or IP address.',
+    whyHere: 'Shields backend services from traffic spikes, abuse, and floods.',
+  },
+  'load-balancer': {
+    whatItIs: 'Traffic distributor balancing requests across server instances.',
+    whyHere: 'Distributes load evenly so no single server gets overwhelmed.',
+  },
+  'api-gateway': {
+    whatItIs: 'Unified entrance handling routing, auth, and SSL termination.',
+    whyHere: 'Provides a single managed gateway for all client API calls.',
+  },
+  'app-server': {
+    whatItIs: 'The server running your application code and handling requests.',
+    whyHere: 'Executes business logic and queries databases and caches to return responses.',
+  },
+  cache: {
+    whatItIs: 'High-speed in-memory store for frequent database records.',
+    whyHere: 'Serves repeat queries in sub-millisecond time to drop database workload.',
+  },
+  database: {
+    whatItIs: 'The primary persistent database storing authoritative business data.',
+    whyHere: 'Safeguards core records permanently across restarts and power loss.',
+  },
+  'database-replica': {
+    whatItIs: 'A read-only replica synchronized with the primary database.',
+    whyHere: 'Scales read query capacity horizontally so the primary can focus on writes.',
+  },
+  'message-queue': {
+    whatItIs: 'An asynchronous buffer holding tasks until workers are ready.',
+    whyHere: 'Prevents user requests from stalling while heavy tasks complete in background.',
+  },
+  worker: {
+    whatItIs: 'A background compute process executing queued tasks.',
+    whyHere: 'Pulls tasks from the queue and records final outcomes to the database.',
+  },
+};
+
 /**
  * Validate all slot rules against Zod schema at runtime.
  */

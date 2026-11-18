@@ -453,20 +453,49 @@ try {
   `);
   await new Promise((r) => setTimeout(r, 300));
 
-  // Running simulation with animated circular packets and hollow rings
+  // 12e. Simulation Shot 1: Builder at 100 RPS after ~5s simulated time (shows "Pause", timeline advanced, circle packets, utilization >0%, live health indicators)
+  console.log('--- 12e. Simulation Shot 1: Builder at 100 RPS at ~5s simulated time ---');
   await client.eval(`
     if (window.__graphStore && window.__simulationStore) {
       const g = window.__graphStore.getState().graph;
+      window.__simulationStore.getState().reset(g);
+      window.__simulationStore.getState().setTrafficConfig({ rps: 100, pattern: 'constant' });
+      window.__simulationStore.getState().setDisplayMode('individual');
       window.__simulationStore.getState().play(g);
+      // Advance ~5000ms in discrete engine
+      for (let i = 0; i < 50; i++) {
+        window.__simulationStore.getState().tickFrame(100, g);
+      }
     }
   `);
-  await new Promise((r) => setTimeout(r, 800));
+  await new Promise((r) => setTimeout(r, 600));
+  await client.screenshot('redesign-sim-100rps-1440x900.png');
   await client.screenshot('redesign-running-simulation-1440x900.png');
 
-  // Pause simulation
+  // 12f. Simulation Shot 2: 100k RPS aggregate run with flow density and readout "Simulating 100,000 req/s | showing N sampled"
+  console.log('--- 12f. Simulation Shot 2: 100k RPS aggregate run ---');
   await client.eval(`
-    if (window.__simulationStore) window.__simulationStore.getState().pause();
+    if (window.__graphStore && window.__simulationStore) {
+      const g = window.__graphStore.getState().graph;
+      window.__simulationStore.getState().setTrafficConfig({ rps: 100000, pattern: 'constant' });
+      window.__simulationStore.getState().setDisplayMode('aggregate');
+      for (let i = 0; i < 20; i++) {
+        window.__simulationStore.getState().tickFrame(100, g);
+      }
+    }
   `);
+  await new Promise((r) => setTimeout(r, 600));
+  await client.screenshot('redesign-sim-100krps-aggregate-1440x900.png');
+
+  // 12g. Simulation Shot 3: Paused run proving packets/particles freeze mid-edge (shows "Resume")
+  console.log('--- 12g. Simulation Shot 3: Paused run with frozen packets & Resume button ---');
+  await client.eval(`
+    if (window.__simulationStore) {
+      window.__simulationStore.getState().pause();
+    }
+  `);
+  await new Promise((r) => setTimeout(r, 500));
+  await client.screenshot('redesign-sim-paused-freeze-1440x900.png');
 
   // Tablet 768px redesign: inspector as overlay drawer without squeezing canvas
   await client.setViewport(768, 1024);

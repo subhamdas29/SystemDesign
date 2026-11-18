@@ -74,8 +74,9 @@ export const App: React.FC = () => {
   const activeTutorialId = useUiStore(selectActiveTutorialId);
   const exitTutorial = useUiStore((s) => s.exitTutorial);
 
-  // Responsive / Mobile screen warning
+  // Responsive / Mobile / Tablet screen check
   const [isMobileScreen, setIsMobileScreen] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
   const [isMobileBannerDismissed, setIsMobileBannerDismissed] = useState(false);
 
   // Autosave & Share Link Management
@@ -92,6 +93,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleResize = () => {
       setIsMobileScreen(window.innerWidth < 768);
+      setIsTablet(window.innerWidth < 1024);
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -144,14 +146,32 @@ export const App: React.FC = () => {
       {activeNavTab === 'create' ? (
         <>
           <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
-            {/* Left Column: Inventory Panel or Attack Console (Hidden in Focus Mode) */}
+            {/* Tablet Scrim Overlay (Item 9b) */}
+            {isTablet && !isFocusMode && (isInventoryOpen || isInspectorOpen) && (
+              <div
+                className="fixed inset-0 bg-black/70 z-30 transition-opacity"
+                onClick={() => {
+                  useUiStore.getState().setInventoryOpen(false);
+                  useUiStore.getState().selectNode(null);
+                  useUiStore.getState().selectEdge(null);
+                }}
+              />
+            )}
+
+            {/* Left Column: Inventory Panel or Attack Console (Reflows on desktop, overlay on tablet per Item 9b) */}
             {!isFocusMode && isInventoryOpen && (
-              <div className="w-[340px] max-w-[85vw] h-full shrink-0 relative overflow-hidden z-10 transition-all duration-200">
+              <div
+                className={`${
+                  isTablet
+                    ? 'fixed inset-y-0 left-0 z-40 w-[340px] max-w-[85vw]'
+                    : 'w-[340px] max-w-[85vw] h-full shrink-0 relative z-10'
+                } overflow-hidden transition-all duration-200`}
+              >
                 {isAttackerMode ? <AttackConsole /> : <InventoryPanel />}
               </div>
             )}
 
-            {/* Center Column: Central Canvas */}
+            {/* Center Column: Central Canvas (Reflowed by drawers) */}
             <main
               className="relative h-full w-full min-h-0 min-w-0 overflow-hidden bg-dot-grid flex-1"
               aria-label="Architecture Canvas"
@@ -186,9 +206,15 @@ export const App: React.FC = () => {
               )}
             </main>
 
-            {/* Right Column: Inspector Panel (Hidden in Focus Mode) */}
+            {/* Right Column: Inspector Panel (Reflows on desktop, overlay on tablet per Item 9b) */}
             {!isFocusMode && isInspectorOpen && (
-              <div className="w-[360px] max-w-[85vw] h-full shrink-0 relative overflow-hidden z-10 transition-all duration-200">
+              <div
+                className={`${
+                  isTablet
+                    ? 'fixed inset-y-0 right-0 z-40 w-[360px] max-w-[85vw]'
+                    : 'w-[360px] max-w-[85vw] h-full shrink-0 relative z-10'
+                } overflow-hidden transition-all duration-200`}
+              >
                 <InspectorPanel />
               </div>
             )}

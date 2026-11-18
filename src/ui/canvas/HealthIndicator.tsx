@@ -82,11 +82,11 @@ export const HealthIndicator: React.FC = () => {
           style={{ backgroundColor: dotColor }}
         />
         <span className="capitalize">{health.status}</span>
-        <span className="text-[#8F96A3]">{currentRps.toLocaleString()} RPS</span>
-        <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#8F96A3]'}>
+        <span className="text-[#8E8E8E]">{currentRps.toLocaleString()} RPS</span>
+        <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#8E8E8E]'}>
           {errorPct}% err
         </span>
-        <span className="text-[#8F96A3] text-[9px] ml-0.5">▾</span>
+        <span className="text-[#8E8E8E] text-[9px] ml-0.5">▾</span>
       </button>
 
       {/* 2. Unboxed Typographic Details Dropdown (no border, no card, no close button) */}
@@ -105,24 +105,24 @@ export const HealthIndicator: React.FC = () => {
           </div>
 
           {/* Health diagnosis reason */}
-          <div className="text-[11px] text-[#8F96A3] leading-relaxed">
+          <div className="text-[11px] text-[#8E8E8E] leading-relaxed">
             {health.reason}
           </div>
 
           {/* Key telemetry readout */}
           <div className="pt-2 space-y-1 text-[11px]">
             <div className="flex justify-between">
-              <span className="text-[#8F96A3]">Rate:</span>
+              <span className="text-[#8E8E8E]">Rate:</span>
               <span className="text-[#F3EEE3] font-medium">{currentRps.toLocaleString()} req/s</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#8F96A3]">Errors / Drops:</span>
+              <span className="text-[#8E8E8E]">Errors / Drops:</span>
               <span className={errorPct > 5 ? 'text-[#D9541E] font-semibold' : 'text-[#F3EEE3]'}>
                 {errorPct}% ({totalErrors} failed)
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-[#8F96A3]">In-Flight:</span>
+              <span className="text-[#8E8E8E]">In-Flight:</span>
               <span className="text-[#F3EEE3] font-medium">
                 {system?.inFlightRequests ?? 0} requests
               </span>

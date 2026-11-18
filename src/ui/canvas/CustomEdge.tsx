@@ -99,13 +99,7 @@ export const CustomEdge: React.FC<EdgeProps> = memo(({
             className="cursor-pointer z-10 font-mono"
           >
             {hasLatencyCustomization && latency && (
-              <span
-                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
-                  isSelected
-                    ? 'bg-[#15181E] text-[#D9541E] border-[#D9541E]'
-                    : 'bg-[#15181E] text-[#8F96A3] border-[#2A2E39]'
-                }`}
-              >
+              <span className="text-[10px] font-mono text-[#F3EEE3] select-none tracking-tight">
                 {latency.baseLatencyMs}ms
               </span>
             )}

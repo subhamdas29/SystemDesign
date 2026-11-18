@@ -161,14 +161,14 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
             <h2 id="library-modal-title" className="text-sm font-bold text-[#F3EEE3] tracking-wide uppercase">
               Saved Designs
             </h2>
-            <p className="text-[11px] text-[#8F96A3]">
+            <p className="text-[11px] text-[#8E8E8E]">
               Browse and manage architecture workspaces
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded text-[#8F96A3] hover:text-[#F3EEE3] hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
+            className="w-7 h-7 rounded text-[#8E8E8E] hover:text-[#F3EEE3] hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
             aria-label="Close"
           >
             ✕
@@ -183,7 +183,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
             className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap transition-all ${
               tab === 'my-projects'
                 ? 'bg-[#F3EEE3] text-[#15181E]'
-                : 'text-[#8F96A3] hover:text-[#F3EEE3] hover:bg-white/5'
+                : 'text-[#8E8E8E] hover:text-[#F3EEE3] hover:bg-white/5'
             }`}
           >
             Mine ({projects.length})
@@ -194,7 +194,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
             className={`px-3 py-1.5 rounded text-xs font-semibold whitespace-nowrap transition-all ${
               tab === 'starter-templates'
                 ? 'bg-[#F3EEE3] text-[#15181E]'
-                : 'text-[#8F96A3] hover:text-[#F3EEE3] hover:bg-white/5'
+                : 'text-[#8E8E8E] hover:text-[#F3EEE3] hover:bg-white/5'
             }`}
           >
             Templates ({templates.length})
@@ -212,7 +212,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
           {tab === 'my-projects' && (
             <>
               {projects.length === 0 ? (
-                <div className="py-12 text-center text-[#8F96A3] text-sm">
+                <div className="py-12 text-center text-[#8E8E8E] text-sm">
                   <p>No saved projects yet.</p>
                   <p className="text-xs text-[#6B7280] mt-1">
                     Save your architecture below or load a starter template.
@@ -222,7 +222,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                 projects.map((p) => (
                   <div
                     key={p.id}
-                    className="p-3.5 rounded bg-[#1B1E24] border border-[#2A2E39] hover:border-[#8F96A3] transition-all flex items-center justify-between gap-3 group"
+                    className="p-3.5 rounded bg-[#1B1E24] border border-[#2A2E39] hover:border-[#8E8E8E] transition-all flex items-center justify-between gap-3 group"
                   >
                     <div className="flex-1 min-w-0">
                       {editingId === p.id ? (
@@ -255,7 +255,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                           <div className="text-xs font-semibold text-[#F3EEE3] group-hover/btn:text-[#D9541E] truncate transition-colors">
                             {p.name}
                           </div>
-                          <div className="text-[10px] text-[#8F96A3] mt-0.5">
+                          <div className="text-[10px] text-[#8E8E8E] mt-0.5">
                             {p.graph?.nodes?.length || 0} nodes · Updated{' '}
                             {new Date(p.updatedAt).toLocaleDateString()}
                           </div>
@@ -274,7 +274,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleStartRename(p)}
-                        className="p-1 text-[11px] text-[#8F96A3] hover:text-white rounded hover:bg-white/5"
+                        className="p-1 text-[11px] text-[#8E8E8E] hover:text-white rounded hover:bg-white/5"
                         title="Rename"
                       >
                         ✎
@@ -282,7 +282,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleDuplicate(p)}
-                        className="p-1 text-[11px] text-[#8F96A3] hover:text-white rounded hover:bg-white/5"
+                        className="p-1 text-[11px] text-[#8E8E8E] hover:text-white rounded hover:bg-white/5"
                         title="Duplicate"
                       >
                         📄
@@ -290,7 +290,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleExportJson(p)}
-                        className="p-1 text-[11px] text-[#8F96A3] hover:text-white rounded hover:bg-white/5"
+                        className="p-1 text-[11px] text-[#8E8E8E] hover:text-white rounded hover:bg-white/5"
                         title="Export JSON"
                       >
                         📥
@@ -320,7 +320,7 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="text-xs font-semibold text-[#F3EEE3]">{t.name}</h3>
-                      <p className="text-[10px] text-[#8F96A3] mt-0.5 font-mono">
+                      <p className="text-[10px] text-[#8E8E8E] mt-0.5 font-mono">
                         {t.graph.nodes.length} nodes · {(t.traffic?.peakRps ?? 0).toLocaleString()} RPS · {t.traffic.pattern}
                       </p>
                     </div>

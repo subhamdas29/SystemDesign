@@ -293,7 +293,7 @@ export const AnimationCanvas: React.FC = () => {
           // Queued packet: waiting near the node
           ctx.beginPath();
           ctx.arc(currentPos.x, currentPos.y, 3.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#8F96A3';
+          ctx.fillStyle = '#8E8E8E';
           ctx.fill();
         } else if (isMalicious) {
           // Orange fill with thin outer ring for malicious traffic

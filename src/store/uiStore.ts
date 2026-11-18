@@ -119,24 +119,67 @@ export const useUiStore = create<UiStoreState>((set) => ({
   toggleLegacyMenu: () => set((state) => ({ isLegacyMenuOpen: !state.isLegacyMenuOpen })),
   setLegacyMenuOpen: (isOpen: boolean) => set({ isLegacyMenuOpen: isOpen }),
   selectNode: (nodeId: string | null) =>
-    set((state) => ({
-      selectedNodeId: nodeId,
-      selectedEdgeId: nodeId !== null ? null : state.selectedEdgeId,
-      // Automatically reveal inspector when a node is selected
-      isInspectorOpen: nodeId !== null ? true : state.isInspectorOpen,
-    })),
+    set((state) => {
+      const isSelected = nodeId !== null;
+      const isNarrow = typeof window !== 'undefined' ? window.innerWidth <= 1440 : false;
+      return {
+        selectedNodeId: nodeId,
+        selectedEdgeId: isSelected ? null : state.selectedEdgeId,
+        isInspectorOpen: isSelected,
+        isInventoryOpen: isSelected && isNarrow ? false : state.isInventoryOpen,
+      };
+    }),
   selectEdge: (edgeId: string | null) =>
-    set((state) => ({
-      selectedEdgeId: edgeId,
-      selectedNodeId: edgeId !== null ? null : state.selectedNodeId,
-      isInspectorOpen: edgeId !== null ? true : state.isInspectorOpen,
-    })),
+    set((state) => {
+      const isSelected = edgeId !== null;
+      const isNarrow = typeof window !== 'undefined' ? window.innerWidth <= 1440 : false;
+      return {
+        selectedEdgeId: edgeId,
+        selectedNodeId: isSelected ? null : state.selectedNodeId,
+        isInspectorOpen: isSelected,
+        isInventoryOpen: isSelected && isNarrow ? false : state.isInventoryOpen,
+      };
+    }),
   toggleDashboard: () => set((state) => ({ isDashboardOpen: !state.isDashboardOpen })),
   setDashboardOpen: (isOpen: boolean) => set({ isDashboardOpen: isOpen }),
-  toggleInventory: () => set((state) => ({ isInventoryOpen: !state.isInventoryOpen })),
-  setInventoryOpen: (isOpen: boolean) => set({ isInventoryOpen: isOpen }),
-  toggleInspector: () => set((state) => ({ isInspectorOpen: !state.isInspectorOpen })),
-  setInspectorOpen: (isOpen: boolean) => set({ isInspectorOpen: isOpen }),
+  toggleInventory: () =>
+    set((state) => {
+      const nextOpen = !state.isInventoryOpen;
+      const isNarrow = typeof window !== 'undefined' ? window.innerWidth <= 1440 : false;
+      const shouldCloseInspector = nextOpen && isNarrow;
+      return {
+        isInventoryOpen: nextOpen,
+        isInspectorOpen: shouldCloseInspector ? false : state.isInspectorOpen,
+        selectedNodeId: shouldCloseInspector ? null : state.selectedNodeId,
+        selectedEdgeId: shouldCloseInspector ? null : state.selectedEdgeId,
+      };
+    }),
+  setInventoryOpen: (isOpen: boolean) =>
+    set((state) => {
+      const isNarrow = typeof window !== 'undefined' ? window.innerWidth <= 1440 : false;
+      const shouldCloseInspector = isOpen && isNarrow;
+      return {
+        isInventoryOpen: isOpen,
+        isInspectorOpen: shouldCloseInspector ? false : state.isInspectorOpen,
+        selectedNodeId: shouldCloseInspector ? null : state.selectedNodeId,
+        selectedEdgeId: shouldCloseInspector ? null : state.selectedEdgeId,
+      };
+    }),
+  toggleInspector: () =>
+    set((state) => {
+      const nextOpen = !state.isInspectorOpen;
+      return {
+        isInspectorOpen: nextOpen,
+        selectedNodeId: nextOpen ? state.selectedNodeId : null,
+        selectedEdgeId: nextOpen ? state.selectedEdgeId : null,
+      };
+    }),
+  setInspectorOpen: (isOpen: boolean) =>
+    set((state) => ({
+      isInspectorOpen: isOpen,
+      selectedNodeId: isOpen ? state.selectedNodeId : null,
+      selectedEdgeId: isOpen ? state.selectedEdgeId : null,
+    })),
   openInspector: () => set({ isInspectorOpen: true }),
   toggleChaosPanel: () => set((state) => ({ isChaosPanelOpen: !state.isChaosPanelOpen })),
   setChaosPanelOpen: (isOpen: boolean) => set({ isChaosPanelOpen: isOpen }),
