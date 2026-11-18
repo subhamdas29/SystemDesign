@@ -40,8 +40,16 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
     if (isOpen) {
       loadProjectList();
       setErrorMsg(null);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -140,26 +148,27 @@ export const ProjectLibraryModal: React.FC<ProjectLibraryModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="library-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in p-4"
+      className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-sm animate-in fade-in select-none font-mono"
+      onClick={onClose}
     >
-      <div className="w-full max-w-2xl max-h-[85vh] bg-[#141416] border border-[#27272a] rounded-2xl shadow-2xl flex flex-col overflow-hidden text-white font-sans">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-[#27272a] flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">📁</span>
-            <div>
-              <h2 id="library-modal-title" className="text-base font-semibold">
-                Project Library
-              </h2>
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Save, load, and manage local architecture workspaces
-              </p>
-            </div>
+      <div
+        className="w-[450px] max-w-[90vw] h-full bg-[#111113] border-r border-[#27272A] shadow-2xl flex flex-col overflow-hidden text-white animate-in slide-in-from-left duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Drawer Header */}
+        <div className="px-5 py-4 border-b border-[#27272A] flex items-center justify-between shrink-0">
+          <div>
+            <h2 id="library-modal-title" className="text-sm font-bold text-[#F3EEE3] tracking-wide uppercase">
+              Saved Designs
+            </h2>
+            <p className="text-[11px] text-[#A1A1AA]">
+              Browse, load, and manage local architecture workspaces
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--color-text-muted)] hover:text-white hover:bg-white/10"
+            className="w-7 h-7 rounded text-[#71717A] hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors cursor-pointer"
             aria-label="Close"
           >
             ✕

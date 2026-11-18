@@ -6,9 +6,12 @@
 import { create } from 'zustand';
 
 export type AppMode = 'builder' | 'attacker';
+export type NavTab = 'create' | 'problems' | 'presets' | 'interview';
 
 export interface UiStoreState {
   mode: AppMode;
+  activeNavTab: NavTab;
+  isFocusMode: boolean;
   selectedNodeId: string | null;
   selectedEdgeId: string | null;
   isDashboardOpen: boolean;
@@ -18,6 +21,10 @@ export interface UiStoreState {
   isPresetModalOpen: boolean;
   isProjectLibraryOpen: boolean;
   isShareModalOpen: boolean;
+  isSharePopoverOpen: boolean;
+  isDownloadPopoverOpen: boolean;
+  isProfileDropdownOpen: boolean;
+  isLegacyMenuOpen: boolean;
   isExampleGalleryOpen: boolean;
   isSettingsModalOpen: boolean;
   isTourOpen: boolean;
@@ -29,6 +36,9 @@ export interface UiStoreState {
 
   // Actions
   setMode: (mode: AppMode) => void;
+  setActiveNavTab: (tab: NavTab) => void;
+  setFocusMode: (isFocus: boolean) => void;
+  toggleFocusMode: () => void;
   selectNode: (nodeId: string | null) => void;
   selectEdge: (edgeId: string | null) => void;
   toggleDashboard: () => void;
@@ -46,6 +56,14 @@ export interface UiStoreState {
   setProjectLibraryOpen: (isOpen: boolean) => void;
   toggleShareModal: () => void;
   setShareModalOpen: (isOpen: boolean) => void;
+  toggleSharePopover: () => void;
+  setSharePopoverOpen: (isOpen: boolean) => void;
+  toggleDownloadPopover: () => void;
+  setDownloadPopoverOpen: (isOpen: boolean) => void;
+  toggleProfileDropdown: () => void;
+  setProfileDropdownOpen: (isOpen: boolean) => void;
+  toggleLegacyMenu: () => void;
+  setLegacyMenuOpen: (isOpen: boolean) => void;
   toggleExampleGallery: () => void;
   setExampleGalleryOpen: (isOpen: boolean) => void;
   toggleSettingsModal: () => void;
@@ -64,6 +82,8 @@ export interface UiStoreState {
 
 export const useUiStore = create<UiStoreState>((set) => ({
   mode: 'builder',
+  activeNavTab: 'create',
+  isFocusMode: false,
   selectedNodeId: null,
   selectedEdgeId: null,
   isDashboardOpen: false,
@@ -73,6 +93,10 @@ export const useUiStore = create<UiStoreState>((set) => ({
   isPresetModalOpen: false,
   isProjectLibraryOpen: false,
   isShareModalOpen: false,
+  isSharePopoverOpen: false,
+  isDownloadPopoverOpen: false,
+  isProfileDropdownOpen: false,
+  isLegacyMenuOpen: false,
   isExampleGalleryOpen: false,
   isSettingsModalOpen: false,
   isTourOpen: false,
@@ -83,6 +107,17 @@ export const useUiStore = create<UiStoreState>((set) => ({
   hint: null,
 
   setMode: (mode: AppMode) => set({ mode }),
+  setActiveNavTab: (activeNavTab: NavTab) => set({ activeNavTab }),
+  setFocusMode: (isFocusMode: boolean) => set({ isFocusMode }),
+  toggleFocusMode: () => set((state) => ({ isFocusMode: !state.isFocusMode })),
+  toggleSharePopover: () => set((state) => ({ isSharePopoverOpen: !state.isSharePopoverOpen })),
+  setSharePopoverOpen: (isOpen: boolean) => set({ isSharePopoverOpen: isOpen }),
+  toggleDownloadPopover: () => set((state) => ({ isDownloadPopoverOpen: !state.isDownloadPopoverOpen })),
+  setDownloadPopoverOpen: (isOpen: boolean) => set({ isDownloadPopoverOpen: isOpen }),
+  toggleProfileDropdown: () => set((state) => ({ isProfileDropdownOpen: !state.isProfileDropdownOpen })),
+  setProfileDropdownOpen: (isOpen: boolean) => set({ isProfileDropdownOpen: isOpen }),
+  toggleLegacyMenu: () => set((state) => ({ isLegacyMenuOpen: !state.isLegacyMenuOpen })),
+  setLegacyMenuOpen: (isOpen: boolean) => set({ isLegacyMenuOpen: isOpen }),
   selectNode: (nodeId: string | null) =>
     set((state) => ({
       selectedNodeId: nodeId,
@@ -129,6 +164,12 @@ export const useUiStore = create<UiStoreState>((set) => ({
 
 // Selectors
 export const selectAppMode = (s: UiStoreState) => s.mode;
+export const selectActiveNavTab = (s: UiStoreState) => s.activeNavTab;
+export const selectIsFocusMode = (s: UiStoreState) => s.isFocusMode;
+export const selectIsSharePopoverOpen = (s: UiStoreState) => s.isSharePopoverOpen;
+export const selectIsDownloadPopoverOpen = (s: UiStoreState) => s.isDownloadPopoverOpen;
+export const selectIsProfileDropdownOpen = (s: UiStoreState) => s.isProfileDropdownOpen;
+export const selectIsLegacyMenuOpen = (s: UiStoreState) => s.isLegacyMenuOpen;
 export const selectSelectedNodeId = (s: UiStoreState) => s.selectedNodeId;
 export const selectSelectedEdgeId = (s: UiStoreState) => s.selectedEdgeId;
 export const selectIsDashboardOpen = (s: UiStoreState) => s.isDashboardOpen;
